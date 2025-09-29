@@ -1,6 +1,6 @@
 {
   "name": "bluematador-mcp-server",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Connect Bluematador monitoring to Claude Desktop via MCP server",
   "type": "module",
   "main": "dist/index.js",
@@ -31,7 +31,17 @@
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["mcp", "claude", "bluematador", "monitoring", "aws", "azure", "claude-desktop", "alerting", "infrastructure"],
+  "keywords": [
+    "mcp",
+    "claude",
+    "bluematador",
+    "monitoring",
+    "aws",
+    "azure",
+    "claude-desktop",
+    "alerting",
+    "infrastructure"
+  ],
   "engines": {
     "node": ">=16.0.0"
   },
