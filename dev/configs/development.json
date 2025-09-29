@@ -1,0 +1,15 @@
+{
+  "name": "bluematador-mcp-server-dev",
+  "version": "1.0.0-dev",
+  "description": "Development configuration for Bluematador MCP server",
+  "mcpServer": {
+    "name": "bluematador-mcp-server-dev",
+    "version": "1.0.0-dev"
+  },
+  "args": ["node", "dist/index.js"],
+  "env": {
+    "NODE_ENV": "development",
+    "DEBUG": "true",
+    "BLUEMATADOR_API_BASE_URL": "https://app.bluematador.com"
+  }
+}

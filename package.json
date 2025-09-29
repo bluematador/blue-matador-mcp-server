@@ -10,7 +10,17 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "start:dev": "./dev/scripts/start-dev.sh",
+    "watch:dev": "./dev/scripts/watch-dev.sh",
+    "test": "node test/integration/test-mute-monitors.js",
+    "test:integration": "node test/integration/test-mute-monitors.js",
+    "test:mcp-direct": "node test/integration/test_mcp_direct.js",
+    "test:mcp-tools": "node test/integration/test_mcp_tools.js",
+    "clean": "rm -rf dist",
+    "rebuild": "npm run clean && npm run build",
+    "lint": "echo 'Linting not configured yet'",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": ["mcp", "bluematador", "monitoring", "aws", "azure"],
   "author": "Bluematador",

@@ -1,0 +1,66 @@
+{
+  "integrations": [
+    {
+      "id": "test-integration-1",
+      "accountId": "test-account-123",
+      "inboundType": "aws",
+      "created": "2023-01-01T00:00:00Z",
+      "enabled": true,
+      "data": {
+        "name": "Test AWS Integration",
+        "status": {
+          "totalSuccess": 100,
+          "totalError": 0,
+          "recentErrors": []
+        }
+      }
+    }
+  ],
+  "events": [
+    {
+      "id": "test-event-1",
+      "accountId": "test-account-123",
+      "opened": "2023-01-01T12:00:00Z",
+      "eventType": "sqs.queue.depth.high",
+      "typeText": "SQS Queue Depth High",
+      "summaryText": "Queue depth is unusually high",
+      "detailTexts": ["Queue has 1000+ messages"],
+      "severity": "alert",
+      "source": {
+        "label": "test-queue",
+        "text": "SQS Queue test-queue",
+        "tags": [
+          {"key": "Environment", "value": "test"},
+          {"key": "Service", "value": "api"}
+        ],
+        "ref": {
+          "arn": "arn:aws:sqs:us-east-1:123456789012:test-queue",
+          "refType": "aws_arn"
+        }
+      },
+      "links": [],
+      "projects": [],
+      "muted": false,
+      "hidden": false
+    }
+  ],
+  "monitors": {
+    "sqs": [
+      "queue.depth.high",
+      "queue.depth.low",
+      "queue.age.high",
+      "queue.messages.visible",
+      "queue.messages.not.visible"
+    ],
+    "rds": [
+      "database.cpu.high",
+      "database.memory.high",
+      "database.connections.high"
+    ],
+    "ec2": [
+      "instance.cpu.high",
+      "instance.memory.high",
+      "instance.disk.high"
+    ]
+  }
+}

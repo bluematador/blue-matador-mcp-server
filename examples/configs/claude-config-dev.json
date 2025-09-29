@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "bluematador-dev": {
+      "command": "node",
+      "args": ["/Users/jsarrelli/bluematador/bluematador-mcp-server/dist/index.js"],
+      "env": {
+        "NODE_ENV": "development",
+        "BLUEMATADOR_API_KEY": "your-dev-api-key-here",
+        "BLUEMATADOR_BASE_URL": "https://app.bluematador.com"
+      }
+    }
+  }
+}

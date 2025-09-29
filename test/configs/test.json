@@ -1,0 +1,20 @@
+{
+  "name": "bluematador-mcp-server-test",
+  "version": "1.0.0-test",
+  "description": "Test configuration for Bluematador MCP server",
+  "mcpServer": {
+    "name": "bluematador-mcp-server-test",
+    "version": "1.0.0-test"
+  },
+  "args": ["node", "dist/index.js"],
+  "env": {
+    "NODE_ENV": "test",
+    "DEBUG": "false",
+    "BLUEMATADOR_API_BASE_URL": "https://test.bluematador.com"
+  },
+  "testConfig": {
+    "mockApi": true,
+    "timeout": 5000,
+    "retries": 3
+  }
+}

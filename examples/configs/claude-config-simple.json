@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "bluematador": {
+      "command": "node",
+      "args": ["/Users/jsarrelli/bluematador/bluematador-mcp-server/dist/index.js"],
+      "env": {
+        "PATH": "/Users/jsarrelli/.nvm/versions/node/v18.18.0/bin:/usr/local/bin:/usr/bin:/bin",
+        "NODE_ENV": "production"
+      }
+    }
+  }
+}

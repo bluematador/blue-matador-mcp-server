@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "bluematador": {
+      "command": "/Users/jsarrelli/bluematador/bluematador-mcp-server/start-server.sh",
+      "args": []
+    }
+  }
+}
