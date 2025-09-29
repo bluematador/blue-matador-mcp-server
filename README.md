@@ -438,6 +438,63 @@ npm run lint               # Run linter (when configured)
 
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed development guide and [docs/TESTING.md](docs/TESTING.md) for testing procedures.
 
+## Deployment
+
+### Automated Deployment via GitHub Actions
+
+This project uses GitHub Actions for automated testing and deployment to NPM.
+
+#### Setup Requirements
+
+1. **NPM Account & Token**
+   - Create account at [npmjs.com](https://npmjs.com)
+   - Generate an **Automation** token: Profile → Access Tokens → Generate New Token → Automation
+   - Add token to GitHub repository: Settings → Secrets → Actions → New repository secret
+   - Name: `NPM_TOKEN`, Value: your automation token
+
+2. **Repository Configuration**
+   - Ensure `package-lock.json` is committed (not in .gitignore)
+   - Update repository URLs in `package.json` if needed
+   - Verify package name is available on NPM
+
+#### Deployment Process
+
+```bash
+# 1. Update version
+npm version patch  # or minor/major
+
+# 2. Push the tag to trigger deployment
+git push --tags
+
+# 3. GitHub Actions will automatically:
+#    - Run tests across multiple Node.js versions (16, 18, 20)
+#    - Test on multiple platforms (Ubuntu, macOS, Windows)
+#    - Build the project
+#    - Publish to NPM
+#    - Create GitHub release
+```
+
+#### Manual Deployment
+
+```bash
+# Build and test locally first
+npm run build
+npm run test
+
+# Publish to NPM
+npm publish
+
+# Create GitHub release manually if needed
+```
+
+### Deployment Checklist
+
+- [ ] NPM_TOKEN secret configured in GitHub
+- [ ] All tests passing locally
+- [ ] Version number updated in package.json
+- [ ] package-lock.json committed to repository
+- [ ] Repository URLs correct in package.json
+
 ## Error Handling
 
 The server provides comprehensive error handling and will return appropriate MCP errors for:
