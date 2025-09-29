@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "bluematador": {
+      "command": "node",
+      "args": ["/Users/jsarrelli/bluematador/bluematador-mcp-server/dist/index.js"]
+    }
+  }
+}

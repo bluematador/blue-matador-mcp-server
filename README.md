@@ -2,6 +2,20 @@
 
 A comprehensive Model Context Protocol (MCP) server that provides complete access to the Bluematador API for monitoring, alerting, and infrastructure management.
 
+## 🖥️ **Platform Support**
+
+### ✅ **Fully Supported**
+- **Claude Desktop** - Native MCP integration with all 34 tools
+- **Claude Dev (VS Code)** - Full compatibility in VS Code environment
+- **Other MCP-compatible clients** - Standard MCP protocol support
+
+### ❌ **Not Supported**
+- **Claude Web (claude.ai)** - No MCP server support
+- **ChatGPT/OpenAI** - Different protocol (not MCP compatible)
+- **Other AI platforms** (Gemini, Bing, etc.) - No MCP support
+
+**Note**: This server uses the Model Context Protocol (MCP) which is specifically designed for Claude platforms. For other AI platforms, direct API integration would be required.
+
 ## Features
 
 This MCP server provides **34 tools** covering all Bluematador capabilities:
@@ -53,16 +67,15 @@ This MCP server provides **34 tools** covering all Bluematador capabilities:
 
 ## Installation
 
-1. Clone this repository or copy the server files
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+### NPM Installation (Recommended)
+```bash
+npm install -g bluematador-mcp-server
+```
 
-3. Build the server:
-   ```bash
-   npm run build
-   ```
+### Manual Installation
+1. Clone this repository
+2. Install dependencies: `npm install`
+3. Build the server: `npm run build`
 
 ## Configuration
 
@@ -108,6 +121,18 @@ npm run dev
 
 Add this server to your Claude Desktop configuration file (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
 
+**If installed via NPM:**
+```json
+{
+  "mcpServers": {
+    "bluematador": {
+      "command": "bluematador-mcp-server"
+    }
+  }
+}
+```
+
+**If installed manually:**
 ```json
 {
   "mcpServers": {
