@@ -1,11 +1,19 @@
 {
   "name": "bluematador-mcp-server",
-  "version": "1.0.0",
-  "description": "MCP server for Bluematador API integration",
+  "version": "1.0.4",
+  "description": "Connect Bluematador monitoring to Claude Desktop via MCP server",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "bluematador-mcp-server": "dist/index.js"
+  },
+  "homepage": "https://github.com/bluematador/bluematador-mcp-server",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bluematador/bluematador-mcp-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bluematador/bluematador-mcp-server/issues"
   },
   "scripts": {
     "build": "tsc",
@@ -20,9 +28,29 @@
     "clean": "rm -rf dist",
     "rebuild": "npm run clean && npm run build",
     "lint": "echo 'Linting not configured yet'",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
   },
-  "keywords": ["mcp", "bluematador", "monitoring", "aws", "azure"],
+  "keywords": [
+    "mcp",
+    "claude",
+    "bluematador",
+    "monitoring",
+    "aws",
+    "azure",
+    "claude-desktop",
+    "alerting",
+    "infrastructure"
+  ],
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "files": [
+    "dist/",
+    "docs/",
+    "examples/",
+    "README.md"
+  ],
   "author": "Bluematador",
   "license": "MIT",
   "dependencies": {

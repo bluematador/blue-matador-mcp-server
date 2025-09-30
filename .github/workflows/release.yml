@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Publish to NPM
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: |
+            ## Installation
+
+            ### NPM (Recommended)
+            ```bash
+            npm install -g bluematador-mcp-server
+            ```
+
+            ### Manual Installation
+            1. Download the source code
+            2. Run `npm install && npm run build`
+
+            ## Configuration
+
+            Add to your Claude Desktop config:
+            ```json
+            {
+              "mcpServers": {
+                "bluematador": {
+                  "command": "bluematador-mcp-server"
+                }
+              }
+            }
+            ```
+
+            ## Platform Support
+            - ✅ Claude Desktop (fully supported)
+            - ✅ Claude Dev (VS Code)
+            - ❌ Claude Web, ChatGPT, other AI platforms
+
+            See the [README](README.md) for detailed usage instructions.
+          draft: false
+          prerelease: false

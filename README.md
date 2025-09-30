@@ -1,427 +1,204 @@
-# Bluematador MCP Server
+# Bluematador for Claude Desktop
 
-A comprehensive Model Context Protocol (MCP) server that provides complete access to the Bluematador API for monitoring, alerting, and infrastructure management.
+Connect your Bluematador monitoring directly to Claude Desktop with complete access to your infrastructure monitoring, alerting, and management capabilities.
 
-## Features
+## 🖥️ **Compatibility**
 
-This MCP server provides **34 tools** covering all Bluematador capabilities:
+### ✅ **Works With**
+- **Claude Desktop** - Full integration with all monitoring tools
+- **Claude Dev (VS Code)** - Complete compatibility in VS Code environment
 
-### 🔗 **Integration Management (8 tools)**
-- **create_aws_integration** - Create a new AWS integration
-- **create_azure_integration** - Create a new Azure integration
-- **list_integrations** - List all integrations for an account
-- **update_aws_integration** - Update an existing AWS integration
-- **update_azure_integration** - Update an existing Azure integration
-- **enable_integration** - Enable an integration
-- **disable_integration** - Disable an integration
-- **delete_integration** - Delete an integration
+### ❌ **Does Not Work With**
+- **Claude Web (claude.ai)** - Web version doesn't support integrations
+- **ChatGPT** - Different platform, not compatible
+- **Other AI chatbots** - Only works with Claude Desktop applications
 
-### 📊 **Events & Monitoring (4 tools)**
-- **get_opened_events** - Get events opened within a specific time period
-- **get_active_events** - Get currently active events
-- **get_active_events_summary** - Get summary of events for the last 30 days
-- **get_metrics** - Query metrics data with flexible filtering
+## What You Can Do
 
-### 📁 **Project Management (1 tool)**
-- **list_projects** - List all projects for an account
+Ask Claude to help you with your Bluematador monitoring using natural language. You get access to all Bluematador features:
 
-### 👥 **User Management (2 tools)**
-- **list_users** - List all users in an account
-- **invite_users** - Invite new users to an account
+### 🔗 **Cloud Integration Management**
+- Set up and manage AWS and Azure monitoring connections
+- Enable, disable, or update your cloud integrations
+- View integration status and troubleshoot issues
 
-### 🔔 **Notification Management (11 tools)**
-- **list_notifications** - List all notification integrations
-- **create_email_notification** - Create email notifications
-- **create_pagerduty_notification** - Create PagerDuty notifications
-- **create_opsgenie_notification** - Create OpsGenie notifications
-- **create_sns_notification** - Create AWS SNS notifications
-- **create_victorops_notification** - Create VictorOps notifications
-- **create_squadcast_notification** - Create SquadCast notifications
-- **create_servicenow_notification** - Create ServiceNow notifications
-- **enable_notification** - Enable a notification integration
-- **disable_notification** - Disable a notification integration
-- **delete_notification** - Delete a notification integration
+### 📊 **Monitoring & Alerts**
+- Check active alerts and events in real-time
+- Query historical monitoring data and trends
+- Get summaries of your infrastructure health
+- View metrics and performance data
 
-### 🔇 **Mute Rules (8 tools)**
-- **list_mute_rules** - List alert mute rules
-- **create_mute_rule** - Create rules to suppress specific alerts
-- **delete_mute_rule** - Delete existing mute rules
-- **get_mute_regions** - Get available AWS/Azure regions for muting
-- **get_mute_monitors** - Get available monitors for muting
-- **get_mute_resources** - Get available resources for muting
-- **mute_monitors_by_service** - Easily mute monitors for specific services (e.g., SQS, RDS, EC2)
+### 🔕 **Alert Management**
+- Create rules to mute specific alerts or resources
+- Mute monitors by service type (SQS, RDS, EC2, etc.)
+- Manage alert visibility and notification preferences
+- Control when and how you receive alerts
+
+### 🔔 **Notification Setup**
+- Configure email, PagerDuty, OpsGenie notifications
+- Set up AWS SNS, VictorOps, SquadCast integrations
+- Manage ServiceNow and other notification channels
+- Control alert severity levels and delivery
+
+### 👥 **Team & Project Management**
+- Invite team members and manage permissions
+- Organize monitoring by projects
+- View user access and activity
 
 ## Installation
 
-1. Clone this repository or copy the server files
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Build the server:
-   ```bash
-   npm run build
-   ```
-
-## Configuration
-
-### Option 1: Per-Request API Key (Recommended)
-You can provide the API key with each tool call, which is ideal for multi-user scenarios:
-
-```json
-{
-  "name": "create_aws_integration",
-  "arguments": {
-    "apiKey": "your-api-key-here",
-    "accountId": "12345678-1234-1234-1234-123456789abc",
-    "name": "My AWS Integration",
-    "roleArn": "arn:aws:iam::123456789012:role/BluematadorRole",
-    "externalId": "unique-external-id"
-  }
-}
-```
-
-### Option 2: Environment Variables
-Alternatively, set environment variables (less secure for multi-user setups):
+Install the Bluematador integration for Claude Desktop:
 
 ```bash
-export BLUEMATADOR_API_KEY="your-api-key-here"
-# Optional: set custom base URL (defaults to https://app.bluematador.com)
-export BLUEMATADOR_BASE_URL="https://app.bluematador.com"
+npm install -g bluematador-mcp-server
 ```
 
-## Usage
+## Setup
 
-### Running the Server
+### 1. Get Your Bluematador Credentials
 
-```bash
-npm start
-```
+1. Log into your [Bluematador account](https://app.bluematador.com)
+2. Go to **Settings** → **API Keys**
+3. Create a new API key
+4. Copy your **API Key** and **Account ID** (UUID format)
 
-For development:
-```bash
-npm run dev
-```
+### 2. Configure Claude Desktop
 
-### Using with Claude Desktop
+Find your Claude Desktop config file:
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
+- **Linux**: `~/.config/claude/claude_desktop_config.json`
 
-Add this server to your Claude Desktop configuration file (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+### 3. Choose Your Configuration
+
+#### Option A: Store Credentials (Easier)
+Your credentials are saved and used automatically:
 
 ```json
 {
   "mcpServers": {
     "bluematador": {
-      "command": "node",
-      "args": ["/path/to/bluematador-mcp-server/dist/index.js"]
+      "command": "bluematador-mcp-server",
+      "env": {
+        "BLUEMATADOR_API_KEY": "your-api-key-here",
+        "BLUEMATADOR_ACCOUNT_ID": "your-account-id-here"
+      }
     }
   }
 }
 ```
 
-**Note:** With the per-request API key approach, you don't need to set environment variables in the config. Each user can provide their own API key when making requests.
+#### Option B: Provide Credentials Per Request (More Secure)
+You provide credentials with each request:
 
-### API Key
-
-You can obtain your Bluematador API key from the API keys page in your Bluematador account dashboard.
-
-## Tool Examples
-
-### Integration Management
-
-```typescript
-// Create AWS Integration
+```json
 {
-  "name": "create_aws_integration",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc",
-    "name": "My AWS Production Environment",
-    "roleArn": "arn:aws:iam::123456789012:role/BluematadorRole",
-    "externalId": "unique-external-id"
-  }
-}
-
-// List all integrations
-{
-  "name": "list_integrations",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc"
-  }
-}
-```
-
-### Events & Monitoring
-
-```typescript
-// Get active events
-{
-  "name": "get_active_events",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc"
-  }
-}
-
-// Get events in time range
-{
-  "name": "get_opened_events",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc",
-    "start": "2024-01-01T00:00:00Z",
-    "end": "2024-01-02T00:00:00Z"
-  }
-}
-```
-
-### User Management
-
-```typescript
-// List users
-{
-  "name": "list_users",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc"
-  }
-}
-
-// Invite users
-{
-  "name": "invite_users",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc",
-    "users": [
-      {"email": "user1@company.com", "admin": false},
-      {"email": "admin@company.com", "admin": true}
-    ]
-  }
-}
-```
-
-### Notification Management
-
-```typescript
-// Create email notification
-{
-  "name": "create_email_notification",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc",
-    "email": "alerts@company.com",
-    "severities": ["alert", "warning"]
-  }
-}
-
-// Create PagerDuty notification
-{
-  "name": "create_pagerduty_notification",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc",
-    "name": "Production Alerts",
-    "account": "mycompany",
-    "serviceName": "Bluematador Service",
-    "serviceSecret": "pagerduty-integration-key",
-    "severities": ["alert"]
-  }
-}
-
-// Create OpsGenie notification
-{
-  "name": "create_opsgenie_notification",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc",
-    "name": "OpsGenie Alerts",
-    "apiKey": "opsgenie-api-key",
-    "severities": ["alert", "warning"]
-  }
-}
-
-// Create AWS SNS notification
-{
-  "name": "create_sns_notification",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc",
-    "name": "SNS Alerts",
-    "topicArn": "arn:aws:sns:us-east-1:123456789012:bluematador-alerts",
-    "severities": ["alert"]
-  }
-}
-
-// Create VictorOps notification
-{
-  "name": "create_victorops_notification",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc",
-    "name": "VictorOps Alerts",
-    "apiKey": "victorops-api-key",
-    "routingKey": "bluematador",
-    "severities": ["alert"]
-  }
-}
-```
-
-### Mute Rules
-
-```typescript
-// List mute rules
-{
-  "name": "list_mute_rules",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc"
-  }
-}
-
-// Create mute rule for specific resource
-{
-  "name": "create_mute_rule",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc",
-    "hide": true,
-    "resource": {
-      "arn": "arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0",
-      "refType": "aws_arn"
+  "mcpServers": {
+    "bluematador": {
+      "command": "bluematador-mcp-server"
     }
   }
 }
-
-// Get available regions for muting
-{
-  "name": "get_mute_regions",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc"
-  }
-}
-
-// Get available monitors for muting
-{
-  "name": "get_mute_monitors",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc"
-  }
-}
-
-// Mute monitors by service (NEW!)
-{
-  "name": "mute_monitors_by_service",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc",
-    "serviceName": "sqs",
-    "hide": false,
-    "monitorNames": ["queue.depth.high", "queue.age.high"]
-  }
-}
-
-// Delete mute rule
-{
-  "name": "delete_mute_rule",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc",
-    "ruleId": "rule-uuid-here"
-  }
-}
 ```
 
-### Metrics & Monitoring
+### 4. Restart Claude Desktop
 
-```typescript
-// Query metrics data
-{
-  "name": "get_metrics",
-  "arguments": {
-    "apiKey": "your-api-key",
-    "accountId": "12345678-1234-1234-1234-123456789abc",
-    "start": "2024-01-01T00:00:00Z",
-    "end": "2024-01-02T00:00:00Z",
-    "metricNames": ["cpu.utilization", "memory.utilization"],
-    "aggregation": "avg"
-  }
-}
+Completely quit and restart Claude Desktop to load the integration.
+
+## How to Use
+
+Once installed, ask Claude to help you with your Bluematador monitoring using natural language:
+
+### 🔍 **Check Your Infrastructure**
+
+**With stored credentials:**
+```
+"What active alerts do I have right now?"
+"Show me events from the last 24 hours"
+"List all my AWS integrations and their status"
 ```
 
-## Development
-
-### Quick Setup
-For local development and testing, run:
-```bash
-./examples/scripts/setup-dev-env.sh
+**With per-request credentials:**
+```
+"Show my active alerts. My API key is abc123 and account ID is 12345678-1234-1234-1234-123456789abc"
+"List my integrations using API key abc123 and account ID 12345678-1234-1234-1234-123456789abc"
 ```
 
-### Project Structure
+### 🔕 **Manage Alerts**
 
 ```
-bluematador-mcp-server/
-├── src/                    # Source code
-│   ├── index.ts           # Main MCP server implementation
-│   ├── api-client.ts      # Bluematador API client
-│   └── types.ts           # TypeScript type definitions
-├── dist/                   # Built JavaScript files
-├── dev/                    # Development tools and configs
-│   ├── configs/           # Development configurations
-│   └── scripts/           # Development scripts
-├── test/                   # Testing files
-│   ├── integration/       # Integration tests
-│   ├── fixtures/          # Test data and mock responses
-│   └── configs/           # Test configurations
-├── examples/               # Example configurations and scripts
-│   ├── configs/           # Example Claude configurations
-│   └── scripts/           # Setup and utility scripts
-└── docs/                   # Documentation
-    ├── DEVELOPMENT.md     # Development guide
-    └── TESTING.md         # Testing guide
+"Mute all SQS monitors for the next hour"
+"Create a mute rule for production EC2 instances"
+"Show me what monitors are available for muting"
+"Delete the mute rule for my test servers"
 ```
 
-### Development Commands
+### 🔔 **Set Up Notifications**
 
-```bash
-# Building and running
-npm run build              # Build TypeScript to JavaScript
-npm run rebuild            # Clean and rebuild
-npm run start              # Start production server
-npm run start:dev          # Start development server
-npm run watch:dev          # Start with auto-restart on changes
-npm run dev                # Start with tsx (TypeScript execution)
-
-# Testing
-npm run test               # Run all tests
-npm run test:integration   # Run integration tests
-
-# Code quality
-npm run typecheck          # Check TypeScript types
-npm run lint               # Run linter (when configured)
+```
+"Create an email notification for critical alerts to ops@company.com"
+"Set up a PagerDuty integration for our production service"
+"Configure SNS notifications for our alerts topic"
+"Show me all my current notification settings"
 ```
 
-### Development Workflow
+### 🔗 **Manage Integrations**
 
-1. **Setup**: Run `./examples/scripts/setup-dev-env.sh`
-2. **Develop**: Use `npm run watch:dev` for auto-restart
-3. **Test**: Run `npm run test` to validate changes
-4. **Build**: Use `npm run build` for production
+```
+"Create a new AWS integration for my production account"
+"Show me the status of all my cloud integrations"
+"Disable the integration for my staging environment"
+"Update my Azure integration settings"
+```
 
-See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed development guide and [docs/TESTING.md](docs/TESTING.md) for testing procedures.
+### 👥 **Team Management**
 
-## Error Handling
+```
+"Who are the users in my account?"
+"Invite john@company.com as an admin user"
+"What projects do we have set up?"
+"Show me recent user activity"
+```
 
-The server provides comprehensive error handling and will return appropriate MCP errors for:
+### 📊 **View Metrics and Data**
 
-- Authentication failures (401)
-- Resource not found (404)
-- Bad requests (400)
-- Internal server errors (500)
+```
+"Get CPU utilization metrics for the last week"
+"Show me a summary of events for the past month"
+"What's the current health status of my infrastructure?"
+"Query memory usage trends for my production servers"
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**"Integration not working"**
+- Restart Claude Desktop completely (quit and reopen)
+- Check that your API key and Account ID are correct
+- Verify your Bluematador account is active
+
+**"Authentication failed"**
+- Double-check your API key format
+- Ensure your Account ID is in UUID format (12345678-1234-1234-1234-123456789abc)
+- Try logging into Bluematador web interface to verify account access
+
+**"No response from Claude"**
+- Make sure you restarted Claude Desktop after configuration
+- Check that the integration is listed in Claude's status
+- Try asking a simple question like "List my integrations"
+
+### Getting Help
+
+- **Bluematador Support**: [support.bluematador.com](https://support.bluematador.com)
+- **Claude Desktop Help**: [Claude Desktop Documentation](https://docs.anthropic.com/claude/docs)
+
+## Security & Privacy
+
+- Your API credentials are only used to connect to your Bluematador account
+- No data is stored or transmitted outside of Claude Desktop and Bluematador
+- Choose the credential configuration that matches your security requirements
 
 ## License
 
-MIT
+MIT License - see the full license in the package documentation.
