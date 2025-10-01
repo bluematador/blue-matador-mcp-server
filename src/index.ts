@@ -33,11 +33,11 @@ class BluematadorMCPServer {
     return {
       apiKey: {
         type: 'string' as const,
-        description: 'Bluematador API key (required for authentication)'
+        description: 'Bluematador API key (optional if BLUEMATADOR_API_KEY environment variable is set)'
       },
       accountId: {
         type: 'string' as const,
-        description: 'Bluematador account ID (UUID format) - required for all operations'
+        description: 'Bluematador account ID (UUID format, optional if BLUEMATADOR_ACCOUNT_ID environment variable is set)'
       }
     };
   }
@@ -52,7 +52,15 @@ class BluematadorMCPServer {
   }
 
   private getAuthRequiredFields() {
-    return ['apiKey', 'accountId'];
+    // Only require fields that aren't available via environment variables
+    const required = [];
+    if (!process.env.BLUEMATADOR_API_KEY) {
+      required.push('apiKey');
+    }
+    if (!process.env.BLUEMATADOR_ACCOUNT_ID) {
+      required.push('accountId');
+    }
+    return required;
   }
 
   private formatResourceInfo(source: any): string {
@@ -64,7 +72,7 @@ class BluematadorMCPServer {
     let resourceInfo = `${icon} **${serviceType}:** ${source.label || source.text || 'Unknown'}\n`;
 
     // Add ARN or Azure ID
-    if (source.ref?.arn) {
+    if (source.ref && source.ref.arn) {
       const refType = source.ref.refType || 'resource';
       const isAzure = refType.toLowerCase().includes('azure') || source.ref.arn.includes('azure');
       const arnIcon = isAzure ? '🔷' : '🟠';
@@ -96,7 +104,7 @@ class BluematadorMCPServer {
   }
 
   private getResourceTypeInfo(source: any): { icon: string; serviceType: string } {
-    const arn = source.ref?.arn || '';
+    const arn = (source.ref && source.ref.arn) ? source.ref.arn : '';
     const label = source.label || '';
 
     // AWS Services
@@ -143,7 +151,7 @@ class BluematadorMCPServer {
     errorInfo += `🛠️ **Tool:** ${toolName}\n`;
 
     // HTTP status information
-    const status = error.status || error.response?.status;
+    const status = error.status || (error.response && error.response.status);
     if (status) {
       errorInfo += `📊 **HTTP Status:** ${status}\n`;
     }
@@ -153,7 +161,7 @@ class BluematadorMCPServer {
     errorInfo += `💬 **Error Message:** ${message}\n`;
 
     // Response data if available
-    if (error.response?.data) {
+    if (error.response && error.response.data) {
       const responseData = typeof error.response.data === 'string'
         ? error.response.data
         : JSON.stringify(error.response.data, null, 2);
@@ -185,16 +193,16 @@ class BluematadorMCPServer {
       errorInfo += `🌐 **Error Code:** ${error.code}\n`;
     }
 
-    if (error.config?.url) {
+    if (error.config && error.config.url) {
       errorInfo += `🔗 **Request URL:** ${error.config.url}\n`;
     }
 
-    if (error.config?.method) {
+    if (error.config && error.config.method) {
       errorInfo += `📡 **HTTP Method:** ${error.config.method.toUpperCase()}\n`;
     }
 
     // Axios specific error information
-    if (error.response?.headers) {
+    if (error.response && error.response.headers) {
       const contentType = error.response.headers['content-type'];
       if (contentType) {
         errorInfo += `📄 **Response Content-Type:** ${contentType}\n`;
@@ -925,6 +933,261 @@ class BluematadorMCPServer {
               required: [...this.getAuthRequiredFields(), 'name', 'instanceName', 'username', 'password', 'sourceInstance', 'severities']
             }
           },
+          // Update Notification Methods
+          {
+            name: 'update_email_notification',
+            description: 'Update an email notification integration',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                ...this.getBaseAuthProperties(),
+                ...this.getOptionalProperties(),
+                outboundId: {
+                  type: 'string',
+                  description: 'Notification ID (UUID format)'
+                },
+                email: {
+                  type: 'string',
+                  format: 'email',
+                  description: 'Email address to send notifications to'
+                },
+                severities: {
+                  type: 'array',
+                  description: 'Event severities to include (e.g., ["alert", "warning", "anomaly"])',
+                  items: {
+                    type: 'string'
+                  }
+                }
+              },
+              required: [...this.getAuthRequiredFields(), 'outboundId', 'email', 'severities']
+            }
+          },
+          {
+            name: 'update_pagerduty_notification',
+            description: 'Update a PagerDuty notification integration',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                ...this.getBaseAuthProperties(),
+                ...this.getOptionalProperties(),
+                outboundId: {
+                  type: 'string',
+                  description: 'Notification ID (UUID format)'
+                },
+                name: {
+                  type: 'string',
+                  description: 'Name for the PagerDuty integration'
+                },
+                account: {
+                  type: 'string',
+                  description: 'PagerDuty account name'
+                },
+                serviceName: {
+                  type: 'string',
+                  description: 'PagerDuty service name'
+                },
+                serviceSecret: {
+                  type: 'string',
+                  description: 'PagerDuty service integration key'
+                },
+                severities: {
+                  type: 'array',
+                  description: 'Event severities to include (e.g., ["alert", "warning", "anomaly"])',
+                  items: {
+                    type: 'string'
+                  }
+                }
+              },
+              required: [...this.getAuthRequiredFields(), 'outboundId', 'name', 'account', 'serviceName', 'serviceSecret', 'severities']
+            }
+          },
+          {
+            name: 'update_opsgenie_notification',
+            description: 'Update an OpsGenie notification integration',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                ...this.getBaseAuthProperties(),
+                ...this.getOptionalProperties(),
+                outboundId: {
+                  type: 'string',
+                  description: 'Notification ID (UUID format)'
+                },
+                name: {
+                  type: 'string',
+                  description: 'Name for the OpsGenie integration'
+                },
+                apikey: {
+                  type: 'string',
+                  description: 'OpsGenie API key'
+                },
+                severities: {
+                  type: 'array',
+                  description: 'Event severities to include (e.g., ["alert", "warning", "anomaly"])',
+                  items: {
+                    type: 'string'
+                  }
+                }
+              },
+              required: [...this.getAuthRequiredFields(), 'outboundId', 'name', 'apikey', 'severities']
+            }
+          },
+          {
+            name: 'update_sns_notification',
+            description: 'Update an AWS SNS notification integration',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                ...this.getBaseAuthProperties(),
+                ...this.getOptionalProperties(),
+                outboundId: {
+                  type: 'string',
+                  description: 'Notification ID (UUID format)'
+                },
+                name: {
+                  type: 'string',
+                  description: 'Name for the SNS integration'
+                },
+                topicArn: {
+                  type: 'string',
+                  description: 'AWS SNS topic ARN'
+                },
+                accessKeyId: {
+                  type: 'string',
+                  description: 'AWS access key ID'
+                },
+                secretAccessKey: {
+                  type: 'string',
+                  description: 'AWS secret access key'
+                },
+                sendResolve: {
+                  type: 'boolean',
+                  description: 'Send resolution notifications'
+                },
+                sendJson: {
+                  type: 'boolean',
+                  description: 'Send notifications as JSON'
+                },
+                severities: {
+                  type: 'array',
+                  description: 'Event severities to include (e.g., ["alert", "warning", "anomaly"])',
+                  items: {
+                    type: 'string'
+                  }
+                }
+              },
+              required: [...this.getAuthRequiredFields(), 'outboundId', 'name', 'topicArn', 'accessKeyId', 'secretAccessKey', 'sendResolve', 'sendJson', 'severities']
+            }
+          },
+          {
+            name: 'update_victorops_notification',
+            description: 'Update a VictorOps notification integration',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                ...this.getBaseAuthProperties(),
+                ...this.getOptionalProperties(),
+                outboundId: {
+                  type: 'string',
+                  description: 'Notification ID (UUID format)'
+                },
+                name: {
+                  type: 'string',
+                  description: 'Name for the VictorOps integration'
+                },
+                integrationId: {
+                  type: 'string',
+                  description: 'VictorOps integration ID'
+                },
+                routingKey: {
+                  type: 'string',
+                  description: 'VictorOps routing key'
+                },
+                severities: {
+                  type: 'array',
+                  description: 'Event severities to include (e.g., ["alert", "warning", "anomaly"])',
+                  items: {
+                    type: 'string'
+                  }
+                }
+              },
+              required: [...this.getAuthRequiredFields(), 'outboundId', 'name', 'integrationId', 'routingKey', 'severities']
+            }
+          },
+          {
+            name: 'update_squadcast_notification',
+            description: 'Update a SquadCast notification integration',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                ...this.getBaseAuthProperties(),
+                ...this.getOptionalProperties(),
+                outboundId: {
+                  type: 'string',
+                  description: 'Notification ID (UUID format)'
+                },
+                name: {
+                  type: 'string',
+                  description: 'Name for the SquadCast integration'
+                },
+                sourceInstance: {
+                  type: 'string',
+                  description: 'SquadCast source instance URL'
+                },
+                severities: {
+                  type: 'array',
+                  description: 'Event severities to include (e.g., ["alert", "warning", "anomaly"])',
+                  items: {
+                    type: 'string'
+                  }
+                }
+              },
+              required: [...this.getAuthRequiredFields(), 'outboundId', 'name', 'sourceInstance', 'severities']
+            }
+          },
+          {
+            name: 'update_servicenow_notification',
+            description: 'Update a ServiceNow notification integration',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                ...this.getBaseAuthProperties(),
+                ...this.getOptionalProperties(),
+                outboundId: {
+                  type: 'string',
+                  description: 'Notification ID (UUID format)'
+                },
+                name: {
+                  type: 'string',
+                  description: 'Name for the ServiceNow integration'
+                },
+                instanceName: {
+                  type: 'string',
+                  description: 'ServiceNow instance name'
+                },
+                username: {
+                  type: 'string',
+                  description: 'ServiceNow username'
+                },
+                password: {
+                  type: 'string',
+                  description: 'ServiceNow password'
+                },
+                sourceInstance: {
+                  type: 'string',
+                  description: 'ServiceNow source instance'
+                },
+                severities: {
+                  type: 'array',
+                  description: 'Event severities to include (e.g., ["alert", "warning", "anomaly"])',
+                  items: {
+                    type: 'string'
+                  }
+                }
+              },
+              required: [...this.getAuthRequiredFields(), 'outboundId', 'name', 'instanceName', 'username', 'password', 'sourceInstance', 'severities']
+            }
+          },
           // Metrics
           {
             name: 'get_metrics',
@@ -1048,6 +1311,45 @@ class BluematadorMCPServer {
               },
               required: [...this.getAuthRequiredFields(), 'serviceName']
             }
+          },
+          {
+            name: 'mute_resources_by_wildcard',
+            description: 'Mute monitors for resources using wildcard patterns (e.g., "sqs-*", "*-prod", "app-*-db")',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                ...this.getBaseAuthProperties(),
+                ...this.getOptionalProperties(),
+                resourcePattern: {
+                  type: 'string',
+                  description: 'Wildcard pattern to match resource names/ARNs (e.g., "sqs-*", "*-prod", "app-*-db"). Use * for any characters.'
+                },
+                serviceType: {
+                  type: 'string',
+                  description: 'Filter by service type (optional, e.g., "sqs", "rds", "ec2", "lambda")'
+                },
+                hide: {
+                  type: 'boolean',
+                  description: 'If true, hide events completely. If false, show but mute them.',
+                  default: false
+                },
+                projects: {
+                  type: 'array',
+                  description: 'Project IDs to apply mute rule to (optional)',
+                  items: {
+                    type: 'string'
+                  }
+                },
+                regions: {
+                  type: 'array',
+                  description: 'AWS/Azure regions to apply mute rule to (optional)',
+                  items: {
+                    type: 'string'
+                  }
+                }
+              },
+              required: [...this.getAuthRequiredFields(), 'resourcePattern']
+            }
           }
         ]
       };
@@ -1068,6 +1370,18 @@ class BluematadorMCPServer {
           'API key is required. Provide it via the "apiKey" parameter or BLUEMATADOR_API_KEY environment variable'
         );
       }
+
+      // Extract account ID from arguments or environment
+      const accountId = (args.accountId as string) || process.env.BLUEMATADOR_ACCOUNT_ID;
+      if (!accountId) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          'Account ID is required. Provide it via the "accountId" parameter or BLUEMATADOR_ACCOUNT_ID environment variable'
+        );
+      }
+
+      // Add accountId to args for handlers that expect it
+      args.accountId = accountId;
 
       // Create a new client for each request to support different API keys
       const baseUrl = (args.baseUrl as string) || process.env.BLUEMATADOR_BASE_URL || 'https://app.bluematador.com';
@@ -1168,6 +1482,28 @@ class BluematadorMCPServer {
           case 'create_servicenow_notification':
             return await this.handleCreateServiceNowNotification(args, apiClient);
 
+          // Update Notification Methods
+          case 'update_email_notification':
+            return await this.handleUpdateEmailNotification(args, apiClient);
+
+          case 'update_pagerduty_notification':
+            return await this.handleUpdatePagerDutyNotification(args, apiClient);
+
+          case 'update_opsgenie_notification':
+            return await this.handleUpdateOpsGenieNotification(args, apiClient);
+
+          case 'update_sns_notification':
+            return await this.handleUpdateSNSNotification(args, apiClient);
+
+          case 'update_victorops_notification':
+            return await this.handleUpdateVictorOpsNotification(args, apiClient);
+
+          case 'update_squadcast_notification':
+            return await this.handleUpdateSquadCastNotification(args, apiClient);
+
+          case 'update_servicenow_notification':
+            return await this.handleUpdateServiceNowNotification(args, apiClient);
+
           // Metrics
           case 'get_metrics':
             return await this.handleGetMetrics(args, apiClient);
@@ -1185,6 +1521,9 @@ class BluematadorMCPServer {
           case 'mute_monitors_by_service':
             return await this.handleMuteMonitorsByService(args, apiClient);
 
+          case 'mute_resources_by_wildcard':
+            return await this.handleMuteResourcesByWildcard(args, apiClient);
+
           default:
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
         }
@@ -1196,7 +1535,7 @@ class BluematadorMCPServer {
         // Enhanced error handling with detailed information
         const errorDetails = this.formatDetailedError(error, name, args);
 
-        const status = error.status || error.response?.status;
+        const status = error.status || (error.response && error.response.status);
         const message = error.message || 'An unknown error occurred';
 
         if (status === 401) {
@@ -1643,7 +1982,7 @@ class BluematadorMCPServer {
     }
 
     const rulesList = muteRules.map(rule =>
-      `- Rule ID: ${rule.id}\n  Hide: ${rule.hide}\n  Active: ${rule.active}\n  Resource: ${rule.resource?.arn || 'All resources'}\n  Projects: ${rule.projects?.length || 0}\n  Regions: ${rule.regions?.length || 0}`
+      `- Rule ID: ${rule.id}\n  Hide: ${rule.hide}\n  Active: ${rule.active}\n  Resource: ${(rule.resource && rule.resource.arn) ? rule.resource.arn : 'All resources'}\n  Projects: ${rule.projects ? rule.projects.length : 0}\n  Regions: ${rule.regions ? rule.regions.length : 0}`
     ).join('\n\n');
 
     return {
@@ -1671,7 +2010,7 @@ class BluematadorMCPServer {
       content: [
         {
           type: 'text',
-          text: `Mute rule created successfully!\n\nDetails:\n- Hide events: ${hide}\n- Resource: ${resource?.arn || 'All resources'}\n- Projects: ${projects?.length || 0}\n- Regions: ${regions?.length || 0}`
+          text: `Mute rule created successfully!\n\nDetails:\n- Hide events: ${hide}\n- Resource: ${(resource && resource.arn) ? resource.arn : 'All resources'}\n- Projects: ${projects ? projects.length : 0}\n- Regions: ${regions ? regions.length : 0}`
         }
       ]
     };
@@ -1797,6 +2136,158 @@ class BluematadorMCPServer {
         {
           type: 'text',
           text: `ServiceNow notification created successfully!\n\nDetails:\n- ID: ${result.id}\n- Name: ${name}\n- Instance: ${instanceName}\n- Username: ${username}\n- Source Instance: ${sourceInstance}\n- Severities: ${severities.join(', ')}\n- Enabled: ${result.enabled}\n- Created: ${result.created}`
+        }
+      ]
+    };
+  }
+
+  // Update Notification handlers
+  private async handleUpdateEmailNotification(args: any, apiClient: BluematadorApiClient) {
+    const { accountId, outboundId, email, severities } = args;
+    const data: EmailNotificationData = {
+      email,
+      severities: { all: severities }
+    };
+
+    const result = await apiClient.updateEmailNotification(accountId, outboundId, data);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Email notification updated successfully!\n\nDetails:\n- ID: ${result.id}\n- Email: ${email}\n- Severities: ${severities.join(', ')}\n- Enabled: ${result.enabled}`
+        }
+      ]
+    };
+  }
+
+  private async handleUpdatePagerDutyNotification(args: any, apiClient: BluematadorApiClient) {
+    const { accountId, outboundId, name, account, serviceName, serviceSecret, severities } = args;
+    const data: PagerDutyNotificationData = {
+      name,
+      account,
+      serviceName,
+      serviceSecret,
+      severities: { all: severities }
+    };
+
+    const result = await apiClient.updatePagerDutyNotification(accountId, outboundId, data);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `PagerDuty notification updated successfully!\n\nDetails:\n- ID: ${result.id}\n- Name: ${name}\n- Account: ${account}\n- Service: ${serviceName}\n- Severities: ${severities.join(', ')}\n- Enabled: ${result.enabled}`
+        }
+      ]
+    };
+  }
+
+  private async handleUpdateOpsGenieNotification(args: any, apiClient: BluematadorApiClient) {
+    const { accountId, outboundId, name, apikey, severities } = args;
+    const data: OpsGenieNotificationData = {
+      name,
+      apikey,
+      severities: { all: severities }
+    };
+
+    const result = await apiClient.updateOpsGenieNotification(accountId, outboundId, data);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `OpsGenie notification updated successfully!\n\nDetails:\n- ID: ${result.id}\n- Name: ${name}\n- Severities: ${severities.join(', ')}\n- Enabled: ${result.enabled}`
+        }
+      ]
+    };
+  }
+
+  private async handleUpdateSNSNotification(args: any, apiClient: BluematadorApiClient) {
+    const { accountId, outboundId, name, topicArn, accessKeyId, secretAccessKey, sendResolve, sendJson, severities } = args;
+    const data: SNSNotificationData = {
+      name,
+      topicArn,
+      accessKeyId,
+      secretAccessKey,
+      sendResolve,
+      sendJson,
+      severities: { all: severities }
+    };
+
+    const result = await apiClient.updateSNSNotification(accountId, outboundId, data);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `AWS SNS notification updated successfully!\n\nDetails:\n- ID: ${result.id}\n- Name: ${name}\n- Topic ARN: ${topicArn}\n- Send Resolve: ${sendResolve}\n- Send JSON: ${sendJson}\n- Severities: ${severities.join(', ')}\n- Enabled: ${result.enabled}`
+        }
+      ]
+    };
+  }
+
+  private async handleUpdateVictorOpsNotification(args: any, apiClient: BluematadorApiClient) {
+    const { accountId, outboundId, name, integrationId, routingKey, severities } = args;
+    const data: VictorOpsNotificationData = {
+      name,
+      integrationId,
+      routingKey,
+      severities: { all: severities }
+    };
+
+    const result = await apiClient.updateVictorOpsNotification(accountId, outboundId, data);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `VictorOps notification updated successfully!\n\nDetails:\n- ID: ${result.id}\n- Name: ${name}\n- Integration ID: ${integrationId}\n- Routing Key: ${routingKey}\n- Severities: ${severities.join(', ')}\n- Enabled: ${result.enabled}`
+        }
+      ]
+    };
+  }
+
+  private async handleUpdateSquadCastNotification(args: any, apiClient: BluematadorApiClient) {
+    const { accountId, outboundId, name, sourceInstance, severities } = args;
+    const data: SquadCastNotificationData = {
+      name,
+      sourceInstance,
+      severities: { all: severities }
+    };
+
+    const result = await apiClient.updateSquadCastNotification(accountId, outboundId, data);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `SquadCast notification updated successfully!\n\nDetails:\n- ID: ${result.id}\n- Name: ${name}\n- Source Instance: ${sourceInstance}\n- Severities: ${severities.join(', ')}\n- Enabled: ${result.enabled}`
+        }
+      ]
+    };
+  }
+
+  private async handleUpdateServiceNowNotification(args: any, apiClient: BluematadorApiClient) {
+    const { accountId, outboundId, name, instanceName, username, password, sourceInstance, severities } = args;
+    const data: ServiceNowNotificationData = {
+      name,
+      credentials: {
+        instanceName,
+        username,
+        password
+      },
+      sourceInstance,
+      severities: { all: severities }
+    };
+
+    const result = await apiClient.updateServiceNowNotification(accountId, outboundId, data);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `ServiceNow notification updated successfully!\n\nDetails:\n- ID: ${result.id}\n- Name: ${name}\n- Instance: ${instanceName}\n- Username: ${username}\n- Source Instance: ${sourceInstance}\n- Severities: ${severities.join(', ')}\n- Enabled: ${result.enabled}`
         }
       ]
     };
@@ -1948,8 +2439,103 @@ class BluematadorMCPServer {
                 `- Service: ${serviceKey}\n` +
                 `- Monitors muted: ${monitorsToMute.join(', ')}\n` +
                 `- Hide events: ${hide}\n` +
-                `- Projects: ${projects?.length || 0}\n` +
-                `- Regions: ${regions?.length || 0}\n\n` +
+                `- Projects: ${projects ? projects.length : 0}\n` +
+                `- Regions: ${regions ? regions.length : 0}\n\n` +
+                `${hide ? 'Events will be completely hidden.' : 'Events will be shown but muted.'}`
+        }
+      ]
+    };
+  }
+
+  private async handleMuteResourcesByWildcard(args: any, apiClient: BluematadorApiClient) {
+    const { accountId, resourcePattern, serviceType, hide = false, projects, regions } = args;
+
+    // Get available resources to find matches
+    const resourcesResponse = await apiClient.getMuteResources(accountId);
+    const allResources = resourcesResponse.resources;
+
+    if (!allResources || allResources.length === 0) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        'No resources found in the account to apply wildcard pattern to.'
+      );
+    }
+
+    // Convert wildcard pattern to regex
+    const wildcardToRegex = (pattern: string): RegExp => {
+      const escapedPattern = pattern
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // Escape special regex chars except *
+        .replace(/\*/g, '.*'); // Replace * with .*
+      return new RegExp(`^${escapedPattern}$`, 'i'); // Case insensitive
+    };
+
+    const patternRegex = wildcardToRegex(resourcePattern);
+
+    // Filter resources by wildcard pattern and optional service type
+    const matchingResources = allResources.filter(resource => {
+      // Check if resource ARN matches the pattern
+      const resourceName = resource.arn || '';
+      const nameMatches = patternRegex.test(resourceName);
+
+      // If service type is specified, also filter by it
+      if (serviceType) {
+        // Extract service type from ARN (e.g., arn:aws:sqs:... -> sqs)
+        const arnParts = resource.arn.split(':');
+        const resourceServiceType = arnParts.length > 2 ? arnParts[2].toLowerCase() : '';
+        const targetServiceType = serviceType.toLowerCase();
+        return nameMatches && resourceServiceType === targetServiceType;
+      }
+
+      return nameMatches;
+    });
+
+    if (matchingResources.length === 0) {
+      const serviceFilter = serviceType ? ` and service type "${serviceType}"` : '';
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `No resources found matching pattern "${resourcePattern}"${serviceFilter}. ` +
+        `Total resources available: ${allResources.length}`
+      );
+    }
+
+    // Create individual mute rules for each matching resource
+    const muteResults = [];
+
+    for (const resource of matchingResources) {
+      if (resource.arn) {
+        const muteRuleData: CreateMuteRuleData = {
+          hide,
+          resource: { arn: resource.arn, refType: resource.refType },
+          projects,
+          regions
+        };
+
+        try {
+          await apiClient.createMuteRule(accountId, muteRuleData);
+          muteResults.push(`✅ ${resource.arn}`);
+        } catch (error: any) {
+          muteResults.push(`❌ ${resource.arn} (Error: ${error.message})`);
+        }
+      }
+    }
+
+    const successCount = muteResults.filter(result => result.startsWith('✅')).length;
+    const failureCount = muteResults.filter(result => result.startsWith('❌')).length;
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Wildcard mute rules created!\n\n` +
+                `**Pattern:** ${resourcePattern}\n` +
+                `**Service Filter:** ${serviceType || 'All services'}\n` +
+                `**Matched Resources:** ${matchingResources.length}\n` +
+                `**Successfully Muted:** ${successCount}\n` +
+                `**Failed:** ${failureCount}\n` +
+                `**Hide Events:** ${hide}\n` +
+                `**Projects:** ${projects ? projects.length : 0}\n` +
+                `**Regions:** ${regions ? regions.length : 0}\n\n` +
+                `**Results:**\n${muteResults.join('\n')}\n\n` +
                 `${hide ? 'Events will be completely hidden.' : 'Events will be shown but muted.'}`
         }
       ]

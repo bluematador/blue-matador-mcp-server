@@ -47,8 +47,8 @@ export class BluematadorApiClient {
       (error) => {
         // Preserve the full error object for detailed error reporting
         const enhancedError = {
-          message: error.response?.data?.message || error.message,
-          status: error.response?.status,
+          message: (error.response && error.response.data && error.response.data.message) || error.message,
+          status: error.response && error.response.status,
           response: error.response ? {
             data: error.response.data,
             status: error.response.status,

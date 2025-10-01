@@ -31,6 +31,7 @@ Ask Claude to help you with your Bluematador monitoring using natural language. 
 ### 🔕 **Alert Management**
 - Create rules to mute specific alerts or resources
 - Mute monitors by service type (SQS, RDS, EC2, etc.)
+- Use wildcard patterns to mute multiple resources at once
 - Manage alert visibility and notification preferences
 - Control when and how you receive alerts
 
@@ -129,6 +130,9 @@ Once installed, ask Claude to help you with your Bluematador monitoring using na
 ```
 "Mute all SQS monitors for the next hour"
 "Create a mute rule for production EC2 instances"
+"Mute all resources matching the pattern 'prod-*'"
+"Mute all SQS queues starting with 'test-'"
+"Mute resources ending with '-staging' pattern"
 "Show me what monitors are available for muting"
 "Delete the mute rule for my test servers"
 ```
