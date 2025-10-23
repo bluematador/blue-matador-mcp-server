@@ -7,13 +7,13 @@
   "bin": {
     "bluematador-mcp-server": "dist/index.js"
   },
-  "homepage": "https://github.com/bluematador/bluematador-mcp-server",
+  "homepage": "https://github.com/bluematador/blue-matador-mcp-server",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/bluematador/bluematador-mcp-server.git"
+    "url": "git+https://github.com/bluematador/blue-matador-mcp-server.git"
   },
   "bugs": {
-    "url": "https://github.com/bluematador/bluematador-mcp-server/issues"
+    "url": "https://github.com/bluematador/blue-matador-mcp-server/issues"
   },
   "scripts": {
     "build": "tsc",
