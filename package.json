@@ -1,5 +1,5 @@
 {
-  "name": "bluematador-mcp-server",
+  "name": "blue-matador-mcp-server",
   "version": "1.0.6",
   "description": "Connect Bluematador monitoring to Claude Desktop via MCP server",
   "type": "module",
