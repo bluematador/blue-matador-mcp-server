@@ -1,208 +1,244 @@
 # Bluematador for Claude Desktop
 
-Connect your Bluematador monitoring directly to Claude Desktop with complete access to your infrastructure monitoring, alerting, and management capabilities.
+Connect your Bluematador monitoring to Claude Desktop with **zero installation required**.
 
-## 🖥️ **Compatibility**
+---
 
-### ✅ **Works With**
-- **Claude Desktop** - Full integration with all monitoring tools
-- **Claude Dev (VS Code)** - Complete compatibility in VS Code environment
+## 🚀 Quick Start
 
-### ❌ **Does Not Work With**
-- **Claude Web (claude.ai)** - Web version doesn't support integrations
-- **ChatGPT** - Different platform, not compatible
-- **Other AI chatbots** - Only works with Claude Desktop applications
+Add Bluematador to Claude Desktop in 30 seconds using the remote server:
 
-## What You Can Do
+1. Open **Claude Desktop** → **Settings** → **Connectors**
+2. Click **"Add custom connector"**
+3. Enter:
+   - **Name**: `Bluematador`
+   - **URL**: `https://your-server-url.com/mcp`
+4. Click **"Add"**
 
-Ask Claude to help you with your Bluematador monitoring using natural language. You get access to all Bluematador features:
+That's it! No npm install, no local setup, no configuration files.
 
-### 🔗 **Cloud Integration Management**
-- Set up and manage AWS and Azure monitoring connections
-- Enable, disable, or update your cloud integrations
+**Note**: The remote server is deployed on AWS App Runner, providing automatic HTTPS and scalability.
+
+📖 **[Complete User Guide →](./docs/USER-GUIDE.md)**
+
+---
+
+## 🖥️ Compatibility
+
+### ✅ Works With
+- **Claude Desktop** (macOS, Windows, Linux)
+- **Claude Code** (CLI tool)
+- **Claude Dev** (VS Code extension)
+
+### ❌ Does Not Work With
+- Claude Web (claude.ai)
+- ChatGPT or other AI platforms
+
+---
+
+## ✨ What You Can Do
+
+Ask Claude to help with your Bluematador monitoring using natural language:
+
+### 🔗 Cloud Integration Management
+- Set up and manage AWS/Azure monitoring
+- Enable, disable, or update integrations
 - View integration status and troubleshoot issues
 
-### 📊 **Monitoring & Alerts**
+### 📊 Monitoring & Alerts
 - Check active alerts and events in real-time
-- Query historical monitoring data and trends
-- Get summaries of your infrastructure health
+- Query historical monitoring data
+- Get infrastructure health summaries
 - View metrics and performance data
 
-### 🔕 **Alert Management**
-- Create rules to mute specific alerts or resources
+### 🔕 Alert Management
+- Create mute rules for specific alerts or resources
 - Mute monitors by service type (SQS, RDS, EC2, etc.)
-- Use wildcard patterns to mute multiple resources at once
-- Manage alert visibility and notification preferences
-- Control when and how you receive alerts
+- Use wildcard patterns for bulk operations
+- Control alert visibility and notifications
 
-### 🔔 **Notification Setup**
-- Configure email, PagerDuty, OpsGenie notifications
-- Set up AWS SNS, VictorOps, SquadCast integrations
-- Manage ServiceNow and other notification channels
-- Control alert severity levels and delivery
+### 🔔 Notification Setup
+- Configure Email, PagerDuty, OpsGenie
+- Set up AWS SNS, VictorOps, SquadCast
+- Manage ServiceNow integrations
+- Control alert severity levels
 
-### 👥 **Team & Project Management**
-- Invite team members and manage permissions
+### 👥 Team & Project Management
+- Invite team members
+- Manage user permissions
 - Organize monitoring by projects
-- View user access and activity
 
-## Installation
+---
 
-Install the Bluematador integration for Claude Desktop:
+## 📚 Documentation
+
+- **[User Guide](./docs/USER-GUIDE.md)** - How to use Bluematador with Claude
+- **[Deployment Guide](./docs/DEPLOYMENT.md)** - Deploy your own server to AWS
+- **[API Reference](./docs/API-REFERENCE.md)** - Complete tool reference
+
+---
+
+## 🏢 For Organizations
+
+### Deploy Your Own Server
+
+Want to host the Bluematador MCP server for your organization?
+
+**Recommended**: Deploy to **AWS App Runner** in ~10 minutes with automatic HTTPS.
 
 ```bash
-npm install -g bluematador-mcp-server
+# Clone the repository
+git clone https://github.com/bluematador/blue-matador-mcp-server.git
+cd blue-matador-mcp-server
+
+# Build the project
+npm install
+npm run build
+
+# Deploy to AWS App Runner (see deployment guide)
 ```
 
-## Setup
+📖 **[Complete Deployment Guide →](./docs/DEPLOYMENT.md)**
 
-### 1. Get Your Bluematador Credentials
+### Example Deployment
 
-1. Log into your [Bluematador account](https://app.bluematador.com)
-2. Go to **Settings** → **API Keys**
-3. Create a new API key
-4. Copy your **API Key** and **Account ID** (UUID format)
+Your organization can provide a single URL to all team members:
 
-### 2. Configure Claude Desktop
+```
+https://bluematador-mcp.your-company.com/mcp
+```
 
-Find your Claude Desktop config file:
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
-- **Linux**: `~/.config/claude/claude_desktop_config.json`
+Users simply add this URL to Claude Desktop - no installation needed!
 
-### 3. Choose Your Configuration
+---
 
-#### Option A: Store Credentials (Easier)
-Your credentials are saved and used automatically:
+## 🔒 Security & Privacy
+
+- **No credential storage** - Users provide API keys per-session
+- **Direct API calls** - All requests go directly to Bluematador's API
+- **HTTPS only** - All connections are encrypted
+- **Audit trail** - All actions logged in your Bluematador account
+
+---
+
+## 💡 Example Usage
+
+Once connected, use natural language with Claude:
+
+```
+You: "Show me active Bluematador alerts"
+You: "Create a mute rule for all SQS monitors in us-east-1"
+You: "List my AWS integrations"
+You: "Invite john@company.com as an admin"
+You: "What EC2 instances have high CPU?"
+```
+
+---
+
+## 🛠️ Development
+
+### Project Structure
+
+```
+bluematador-mcp-server/
+├── src/
+│   ├── index.ts              # Entry point (stdio mode)
+│   ├── index-stdio.ts        # Core MCP server implementation
+│   ├── server-http.ts        # HTTP server for remote access
+│   ├── api-client.ts         # Bluematador API client
+│   └── types.ts              # TypeScript types
+├── docs/
+│   ├── USER-GUIDE.md         # User documentation
+│   ├── DEPLOYMENT.md         # Deployment guide
+│   └── API-REFERENCE.md      # API reference
+└── dist/                     # Built files
+```
+
+### Run Locally as MCP Server
+
+To run the server locally for development or testing:
+
+```bash
+# Install dependencies
+npm install
+
+# Build the project
+npm run build
+
+# Run as local stdio MCP server
+npm run start
+```
+
+Then configure Claude Desktop to use the local server by editing your `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "bluematador": {
-      "command": "bluematador-mcp-server",
-      "env": {
-        "BLUEMATADOR_API_KEY": "your-api-key-here",
-        "BLUEMATADOR_ACCOUNT_ID": "your-account-id-here"
-      }
+      "command": "node",
+      "args": ["/absolute/path/to/bluematador-mcp-server/dist/index.js"]
     }
   }
 }
 ```
 
-#### Option B: Provide Credentials Per Request (More Secure)
-You provide credentials with each request:
+**Note**: Replace `/absolute/path/to/` with the actual path to your project directory.
 
-```json
-{
-  "mcpServers": {
-    "bluematador": {
-      "command": "bluematador-mcp-server"
-    }
-  }
-}
-```
+### npm Scripts
 
-### 4. Restart Claude Desktop
+- `npm run build` - Build TypeScript to JavaScript
+- `npm run dev` - Run in development mode (stdio)
+- `npm run dev:http` - Run HTTP server in development mode
+- `npm run start` - Run built stdio server
+- `npm run start:http` - Run built HTTP server
 
-Completely quit and restart Claude Desktop to load the integration.
+---
 
-## How to Use
+## 🌐 Transport Protocols
 
-Once installed, ask Claude to help you with your Bluematador monitoring using natural language:
+This server uses the **Streamable HTTP** transport as specified in the MCP protocol (2025-03-26 revision).
 
-### 🔍 **Check Your Infrastructure**
+- **Protocol Version**: 2024-11-05
+- **Transport**: Streamable HTTP
+- **Endpoint**: `/mcp`
+- **Health Check**: `/health`
 
-**With stored credentials:**
-```
-"What active alerts do I have right now?"
-"Show me events from the last 24 hours"
-"List all my AWS integrations and their status"
-```
+---
 
-**With per-request credentials:**
-```
-"Show my active alerts. My API key is abc123 and account ID is 12345678-1234-1234-1234-123456789abc"
-"List my integrations using API key abc123 and account ID 12345678-1234-1234-1234-123456789abc"
-```
+## 📦 Requirements
 
-### 🔕 **Manage Alerts**
+- **Node.js**: 18.x or higher
+- **Claude Desktop**: Latest version
+- **Bluematador Account**: With API access
 
-```
-"Mute all SQS monitors for the next hour"
-"Create a mute rule for production EC2 instances"
-"Mute all resources matching the pattern 'prod-*'"
-"Mute all SQS queues starting with 'test-'"
-"Mute resources ending with '-staging' pattern"
-"Show me what monitors are available for muting"
-"Delete the mute rule for my test servers"
-```
+---
 
-### 🔔 **Set Up Notifications**
+## 🤝 Contributing
 
-```
-"Create an email notification for critical alerts to ops@company.com"
-"Set up a PagerDuty integration for our production service"
-"Configure SNS notifications for our alerts topic"
-"Show me all my current notification settings"
-```
+Contributions welcome! Please:
 
-### 🔗 **Manage Integrations**
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
-```
-"Create a new AWS integration for my production account"
-"Show me the status of all my cloud integrations"
-"Disable the integration for my staging environment"
-"Update my Azure integration settings"
-```
+---
 
-### 👥 **Team Management**
+## 📄 License
 
-```
-"Who are the users in my account?"
-"Invite john@company.com as an admin user"
-"What projects do we have set up?"
-"Show me recent user activity"
-```
+MIT License - see [LICENSE](./LICENSE) for details
 
-### 📊 **View Metrics and Data**
+---
 
-```
-"Get CPU utilization metrics for the last week"
-"Show me a summary of events for the past month"
-"What's the current health status of my infrastructure?"
-"Query memory usage trends for my production servers"
-```
+## 🆘 Support
 
-## Troubleshooting
+- **Issues**: [GitHub Issues](https://github.com/bluematador/blue-matador-mcp-server/issues)
+- **Documentation**: [Bluematador Docs](https://docs.bluematador.com)
+- **MCP Protocol**: [Model Context Protocol](https://modelcontextprotocol.io)
 
-### Common Issues
+---
 
-**"Integration not working"**
-- Restart Claude Desktop completely (quit and reopen)
-- Check that your API key and Account ID are correct
-- Verify your Bluematador account is active
 
-**"Authentication failed"**
-- Double-check your API key format
-- Ensure your Account ID is in UUID format (12345678-1234-1234-1234-123456789abc)
-- Try logging into Bluematador web interface to verify account access
+**Made with ❤️ by Bluematador**
 
-**"No response from Claude"**
-- Make sure you restarted Claude Desktop after configuration
-- Check that the integration is listed in Claude's status
-- Try asking a simple question like "List my integrations"
-
-### Getting Help
-
-- **Bluematador Support**: [support.bluematador.com](https://support.bluematador.com)
-- **Claude Desktop Help**: [Claude Desktop Documentation](https://docs.anthropic.com/claude/docs)
-
-## Security & Privacy
-
-- Your API credentials are only used to connect to your Bluematador account
-- No data is stored or transmitted outside of Claude Desktop and Bluematador
-- Choose the credential configuration that matches your security requirements
-
-## License
-
-MIT License - see the full license in the package documentation.
+[Website](https://bluematador.com) • [Documentation](https://docs.bluematador.com) • [GitHub](https://github.com/bluematador)
