@@ -46,15 +46,33 @@ Ask Claude to help you with your Bluematador monitoring using natural language. 
 - Organize monitoring by projects
 - View user access and activity
 
-## Installation
+## Installation & Setup
 
-Install the Bluematador integration for Claude Desktop:
+You have two options for using the Bluematador MCP server:
+
+### Option 1: Local Installation (Traditional)
+
+Install via npm and run locally on your machine:
 
 ```bash
 npm install -g bluematador-mcp-server
 ```
 
-## Setup
+### Option 2: Remote Server (No Installation Required) ⭐ NEW
+
+Use a hosted Bluematador MCP server - **no local installation needed!**
+
+Simply configure Claude Desktop to connect to the remote server URL. See [DEPLOYMENT.md](./DEPLOYMENT.md) for hosting your own server, or contact Bluematador for a hosted solution.
+
+**Benefits of remote mode:**
+- ✅ No npm installation required
+- ✅ Works on any device with Claude Desktop
+- ✅ Centralized updates and management
+- ✅ Easier for team deployments
+
+---
+
+## Setup (Local Mode)
 
 ### 1. Get Your Bluematador Credentials
 
@@ -105,6 +123,70 @@ You provide credentials with each request:
 ### 4. Restart Claude Desktop
 
 Completely quit and restart Claude Desktop to load the integration.
+
+---
+
+## Setup (Remote Mode)
+
+### Using a Remote Bluematador MCP Server
+
+If you're connecting to a hosted MCP server, configuration is even simpler:
+
+#### 1. Get the Server URL
+
+Get the server URL from your administrator or hosting platform (e.g., `https://your-server.com/mcp`)
+
+#### 2. Configure Claude Desktop
+
+Find your Claude Desktop config file:
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
+- **Linux**: `~/.config/claude/claude_desktop_config.json`
+
+Add this configuration:
+
+```json
+{
+  "mcpServers": {
+    "bluematador": {
+      "url": "https://your-server.com/mcp"
+    }
+  }
+}
+```
+
+#### 3. Restart Claude Desktop
+
+That's it! No npm install, no local credentials needed.
+
+### Hosting Your Own Remote Server
+
+Want to deploy your own Bluematador MCP server for your team?
+
+See the complete [DEPLOYMENT.md](./DEPLOYMENT.md) guide for:
+- Docker deployment
+- Cloud platform deployment (Railway, Render, Heroku, AWS, GCP, Azure)
+- Security best practices
+- Environment configuration
+- Monitoring and scaling
+
+**Quick start for testing locally:**
+
+```bash
+npm run dev:http
+# Server starts at http://localhost:3000
+```
+
+Then configure Claude Desktop:
+```json
+{
+  "mcpServers": {
+    "bluematador": {
+      "url": "http://localhost:3000/mcp"
+    }
+  }
+}
+```
 
 ## How to Use
 
