@@ -51,6 +51,7 @@
     "dist/",
     "docs/",
     "examples/",
+    "icon.svg",
     "README.md"
   ],
   "author": "Bluematador",

@@ -12,9 +12,15 @@
 
 import express from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
 // Import the stdio server class - we'll reuse its logic
 import { BluematadorMCPServer as StdioServer } from './index-stdio.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 class BluematadorHTTPServer {
   async createHttpServer(port: number = 3000): Promise<any> {
@@ -29,8 +35,23 @@ class BluematadorHTTPServer {
         version: '1.0.0',
         transport: 'Streamable HTTP',
         endpoint: '/mcp',
-        description: 'Bluematador MCP Server - Remote Access via Streamable HTTP'
+        description: 'Bluematador MCP Server - Remote Access via Streamable HTTP',
+        icon: '/icon.svg'
       });
+    });
+
+    // Icon endpoint - serves the Bluematador SVG logo
+    app.get('/icon.svg', (req, res) => {
+      try {
+        const iconPath = join(__dirname, '..', 'icon.svg');
+        const icon = readFileSync(iconPath, 'utf-8');
+        res.setHeader('Content-Type', 'image/svg+xml');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.send(icon);
+      } catch (error) {
+        console.error('Error serving icon:', error);
+        res.status(404).send('Icon not found');
+      }
     });
 
     // Main MCP endpoint using Streamable HTTP transport
