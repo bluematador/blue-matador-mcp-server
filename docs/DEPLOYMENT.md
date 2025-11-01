@@ -1,43 +1,35 @@
-# Deployment Guide
+# Remote Deployment Guide
 
-This guide covers deploying the Bluematador MCP Server to work with Claude Desktop.
+This guide explains how to deploy the Bluematador MCP Server remotely so users can access it without installing anything locally.
 
-## Prerequisites
+## Overview
 
-1. **Node.js** (v16 or higher)
-2. **Claude Desktop** application installed
-3. **Bluematador API Key** from your account
+The Bluematador MCP Server supports two modes:
 
-## Installation Steps
+1. **Local Mode (stdio)** - Traditional npm install, runs locally
+2. **Remote Mode (Streamable HTTP)** - Deployed to a server, accessed via URL
 
-### 1. Build the Production Server
+## Quick Start - Remote Mode
+
+### 1. Build the Server
 
 ```bash
-# Navigate to your project directory
-cd /path/to/bluematador-mcp-server
-
-# Install dependencies
-npm install
-
-# Build the production version
 npm run build
-
-# Verify the build
-ls -la dist/
 ```
 
-### 2. Get Your Bluematador API Key
+### 2. Run Locally for Testing
 
-1. Log into your Bluematador account
-2. Go to Settings → API Keys
-3. Generate a new API key
-4. Copy the API key and your Account ID
+```bash
+npm run start:http
+# Or for development with auto-reload:
+npm run dev:http
+```
 
-### 3. Configure Claude Desktop
+The server will start on `http://localhost:3000`
 
-#### Option A: Using Environment Variables (Recommended)
+### 3. Configure Claude Desktop (Remote)
 
-Create or edit your Claude Desktop configuration file:
+Update your Claude Desktop config to use the remote server:
 
 **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 **Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
@@ -46,234 +38,206 @@ Create or edit your Claude Desktop configuration file:
 {
   "mcpServers": {
     "bluematador": {
-      "command": "node",
-      "args": ["/Users/YOUR_USERNAME/path/to/bluematador-mcp-server/dist/index.js"],
-      "env": {
-        "BLUEMATADOR_API_KEY": "your-api-key-here",
-        "BLUEMATADOR_BASE_URL": "https://app.bluematador.com"
-      }
+      "url": "http://localhost:3000/mcp"
     }
   }
 }
 ```
 
-#### Option B: Per-Request API Keys
+## Deployment Options
 
-If you prefer to provide API keys with each request (more secure for multi-user setups):
+### Option 1: Docker
 
-```json
-{
-  "mcpServers": {
-    "bluematador": {
-      "command": "node",
-      "args": ["/Users/YOUR_USERNAME/path/to/bluematador-mcp-server/dist/index.js"]
-    }
-  }
-}
+**Build and run with Docker:**
+
+```bash
+# Build the application first
+npm run build
+
+# Build Docker image
+docker build -t bluematador-mcp-server .
+
+# Run the container
+docker run -p 3000:3000 \
+  -e BLUEMATADOR_API_KEY=your-key \
+  -e BLUEMATADOR_ACCOUNT_ID=your-account-id \
+  bluematador-mcp-server
 ```
 
-### 4. Restart Claude Desktop
+**Or use Docker Compose:**
 
-1. Quit Claude Desktop completely
-2. Relaunch Claude Desktop
-3. Look for the MCP server connection in the status
+```bash
+# Build first
+npm run build
 
-## Verification
-
-### Test the Connection
-
-1. Open Claude Desktop
-2. Start a new conversation
-3. Try a simple command:
-
-```
-List all my Bluematador integrations
+# Start with docker-compose
+docker-compose up -d
 ```
 
-Or if using per-request API keys:
+### Option 2: Cloud Platforms
 
-```
-Can you list my Bluematador integrations? My API key is YOUR_API_KEY and my account ID is YOUR_ACCOUNT_ID.
-```
+#### Railway
 
-### Expected Response
+1. Connect your GitHub repository to [Railway](https://railway.app)
+2. Set environment variables:
+   - `PORT=3000`
+   - `BLUEMATADOR_API_KEY` (optional)
+   - `BLUEMATADOR_ACCOUNT_ID` (optional)
+3. Railway will automatically detect and build your Node.js app
+4. Use the generated railway.app URL in your Claude config
 
-You should see a response listing your integrations, or instructions on what information is needed.
+#### Render
 
-## Production Deployment Options
+1. Create a new Web Service on [Render](https://render.com)
+2. Connect your repository
+3. Build command: `npm run build`
+4. Start command: `npm run start:http`
+5. Set environment variables as needed
+6. Use the `*.onrender.com` URL in Claude config
 
-### Option 1: Local Installation (Simplest)
+#### Heroku
 
-- Install directly on the machine running Claude Desktop
-- Use the configuration above
-- Good for personal use
+```bash
+# Build first
+npm run build
 
-### Option 2: Network Service
+# Create Heroku app
+heroku create your-app-name
 
-For team environments, you can run the MCP server as a network service:
+# Deploy
+git push heroku main
 
-1. **Set up a server** (Linux/macOS)
-2. **Install Node.js** on the server
-3. **Deploy the code** to the server
-4. **Configure as a system service**
+# Set environment variables (optional)
+heroku config:set BLUEMATADOR_API_KEY=your-key
+heroku config:set BLUEMATADOR_ACCOUNT_ID=your-account-id
 
-Example systemd service file (`/etc/systemd/system/bluematador-mcp.service`):
-
-```ini
-[Unit]
-Description=Bluematador MCP Server
-After=network.target
-
-[Service]
-Type=simple
-User=mcp-user
-WorkingDirectory=/opt/bluematador-mcp-server
-ExecStart=/usr/bin/node dist/index.js
-Restart=always
-RestartSec=10
-Environment=NODE_ENV=production
-Environment=BLUEMATADOR_API_KEY=your-api-key
-Environment=BLUEMATADOR_BASE_URL=https://app.bluematador.com
-
-[Install]
-WantedBy=multi-user.target
+# Your server will be at: https://your-app-name.herokuapp.com
 ```
 
-### Option 3: Docker Deployment
+#### AWS/GCP/Azure
 
-Create a `Dockerfile`:
-
-```dockerfile
-FROM node:18-alpine
-
-WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm ci --only=production
-
-# Copy built application
-COPY dist/ ./dist/
-COPY src/ ./src/
-
-# Expose port (if needed)
-EXPOSE 3000
-
-# Start the application
-CMD ["node", "dist/index.js"]
-```
+Deploy as a containerized application:
+1. Build Docker image
+2. Push to container registry (ECR, GCR, ACR)
+3. Deploy to container service (ECS, Cloud Run, Container Instances)
+4. Expose port 3000
+5. Optional: Set up load balancer with SSL
 
 ## Security Considerations
 
-### API Key Security
+### Public Deployments
 
-1. **Never commit API keys** to version control
-2. **Use environment variables** for sensitive data
-3. **Rotate API keys** regularly
-4. **Limit API key permissions** if possible
+If deploying publicly, **DO NOT** set `BLUEMATADOR_API_KEY` or `BLUEMATADOR_ACCOUNT_ID` as environment variables. Instead, require users to provide credentials per request.
 
-### File Permissions
+Users will provide credentials in their requests through Claude.
 
-```bash
-# Secure the configuration file
-chmod 600 ~/.config/claude/claude_desktop_config.json
+### Private Deployments
 
-# Secure the application directory
-chmod -R 755 /path/to/bluematador-mcp-server
-chmod 644 /path/to/bluematador-mcp-server/dist/*
-```
+If deploying for a single team/organization:
+1. Set default credentials via environment variables
+2. Use firewall rules to restrict access
+3. Consider using a VPN or private network
+4. Enable HTTPS with proper certificates
 
-### Network Security
+### Authentication
 
-If deploying as a network service:
-- Use HTTPS/TLS
-- Implement authentication
-- Use firewalls to restrict access
-- Monitor access logs
+The server currently uses Bluematador API keys for authentication. Consider adding:
+- Rate limiting
+- IP whitelisting
+- Additional authentication layer
+- Request logging
 
-## Troubleshooting
+## Environment Variables
 
-### Common Issues
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `PORT` | No | HTTP server port (default: 3000) |
+| `BLUEMATADOR_API_KEY` | No* | Default API key for requests |
+| `BLUEMATADOR_ACCOUNT_ID` | No* | Default account ID for requests |
+| `BLUEMATADOR_BASE_URL` | No | Custom API URL (default: https://app.bluematador.com) |
+| `NODE_ENV` | No | Node environment (production/development) |
 
-#### "MCP server not found"
-- Check the path in your Claude Desktop config
-- Ensure the `dist/index.js` file exists and is executable
-- Verify Node.js is installed and in PATH
+\* Not required if users provide credentials per-request
 
-#### "Authentication failed"
-- Verify your API key is correct
-- Check your account ID format (should be UUID)
-- Test API key with curl:
-  ```bash
-  curl -H "Authorization: YOUR_API_KEY" \
-       https://app.bluematador.com/zi/api/accounts/YOUR_ACCOUNT_ID/projects
-  ```
+## Client Configuration
 
-#### "Connection refused"
-- Check if the server is running
-- Verify the correct port/address
-- Check firewall settings
+### With Server-Side Credentials
 
-#### "Permission denied"
-- Check file permissions on the MCP server files
-- Ensure the user has execute permissions
-
-### Debug Mode
-
-Enable debug logging by setting environment variables:
+If you've configured default credentials on the server:
 
 ```json
 {
   "mcpServers": {
     "bluematador": {
-      "command": "node",
-      "args": ["/path/to/bluematador-mcp-server/dist/index.js"],
-      "env": {
-        "DEBUG": "true",
-        "NODE_ENV": "development",
-        "BLUEMATADOR_API_KEY": "your-api-key-here"
-      }
+      "url": "https://your-server.com/mcp"
     }
   }
 }
 ```
 
-### Logs
+### Without Server-Side Credentials
 
-Check Claude Desktop logs:
-- **macOS**: `~/Library/Logs/Claude/`
-- **Windows**: `%LOCALAPPDATA%/Claude/logs/`
+Users must provide credentials with each request. They'll be prompted by Claude when needed.
 
-## Maintenance
+## Monitoring
 
-### Updates
-
-To update the MCP server:
+### Health Check Endpoint
 
 ```bash
-# Pull latest changes
-git pull
-
-# Rebuild
-npm run rebuild
-
-# Restart Claude Desktop
+curl https://your-server.com/health
 ```
 
-### Monitoring
+Response:
+```json
+{
+  "status": "ok",
+  "name": "bluematador-mcp-server",
+  "version": "1.0.0",
+  "transport": "SSE",
+  "endpoints": {
+    "sse": "/sse",
+    "message": "/message",
+    "health": "/health"
+  }
+}
+```
 
-Monitor the MCP server:
-- Check Claude Desktop connection status
-- Monitor API rate limits
-- Review error logs
-- Test functionality periodically
+### Logging
 
-### Backup
+The server logs to stderr. Configure your deployment platform to capture and monitor logs.
 
-Backup important configurations:
-- Claude Desktop config file
-- Environment variables
-- API keys (securely)
-- Custom configurations
+## Troubleshooting
+
+### Connection Issues
+
+1. **Check server health**: `curl https://your-server.com/health`
+2. **Verify MCP endpoint**: `curl -X POST https://your-server.com/mcp -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"ping","id":1}'`
+3. **Check firewall rules**: Ensure port 3000 (or your PORT) is accessible
+4. **Transport**: The server uses modern Streamable HTTP transport (not the deprecated SSE)
+
+### Performance
+
+- Each HTTP request creates a new MCP server instance (stateless mode)
+- This is efficient and allows horizontal scaling
+- Monitor memory usage and set appropriate limits for your deployment
+
+## Comparison: Local vs Remote
+
+| Feature | Local (stdio) | Remote (Streamable HTTP) |
+|---------|---------------|-------------------|
+| Installation | `npm install -g` required | No client installation |
+| Access | Local machine only | Anywhere with network access |
+| Security | Credentials in local config | Can be server-side or per-request |
+| Performance | Fastest | Network latency |
+| Scaling | One per user | Centralized, scalable |
+| Updates | User must update | Update once on server |
+
+## Next Steps
+
+1. Choose your deployment platform
+2. Build and deploy the server
+3. Update Claude Desktop configurations
+4. Test the connection
+5. Monitor and scale as needed
+
+For issues or questions, see: https://github.com/bluematador/blue-matador-mcp-server/issues
