@@ -19,7 +19,20 @@ That's it! No npm install, no local setup, no configuration files.
 
 **Note**: The remote server is deployed on AWS App Runner, providing automatic HTTPS and scalability.
 
-📖 **[Complete User Guide →](./docs/USER-GUIDE.md)**
+### 🔑 Providing Credentials
+
+When using the remote server, you'll need to provide your Bluematador credentials with each request:
+
+1. Get your **API Key** from [Bluematador Settings → API Keys](https://app.bluematador.com/settings/api)
+2. Get your **Account ID** (UUID format) from your account settings
+
+Then, when asking Claude to use Bluematador tools, include your credentials:
+
+```
+"Show my active integrations using API key: YOUR_API_KEY and account ID: YOUR_ACCOUNT_ID"
+```
+
+**Note**: Your credentials are only used for that conversation and are never stored by the server.
 
 ---
 

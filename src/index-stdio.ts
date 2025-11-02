@@ -33,11 +33,11 @@ class BluematadorMCPServer {
     return {
       apiKey: {
         type: 'string' as const,
-        description: 'Bluematador API key (optional if BLUEMATADOR_API_KEY environment variable is set)'
+        description: 'Bluematador API key - Get from https://app.bluematador.com/settings/api'
       },
       accountId: {
         type: 'string' as const,
-        description: 'Bluematador account ID (UUID format, optional if BLUEMATADOR_ACCOUNT_ID environment variable is set)'
+        description: 'Bluematador account ID in UUID format - Find in your account settings'
       }
     };
   }
@@ -52,15 +52,8 @@ class BluematadorMCPServer {
   }
 
   private getAuthRequiredFields() {
-    // Only require fields that aren't available via environment variables
-    const required = [];
-    if (!process.env.BLUEMATADOR_API_KEY) {
-      required.push('apiKey');
-    }
-    if (!process.env.BLUEMATADOR_ACCOUNT_ID) {
-      required.push('accountId');
-    }
-    return required;
+    // API key and account ID are always required
+    return ['apiKey', 'accountId'];
   }
 
   private formatResourceInfo(source: any): string {
@@ -1362,21 +1355,20 @@ class BluematadorMCPServer {
         throw new McpError(ErrorCode.InvalidParams, 'Arguments are required');
       }
 
-      // Extract API key from arguments or environment
-      const apiKey = (args.apiKey as string) || process.env.BLUEMATADOR_API_KEY;
+      // Extract API key and account ID from arguments
+      const apiKey = args.apiKey as string;
       if (!apiKey) {
         throw new McpError(
           ErrorCode.InvalidRequest,
-          'API key is required. Provide it via the "apiKey" parameter or BLUEMATADOR_API_KEY environment variable'
+          'API key is required. Get your API key from https://app.bluematador.com/settings/api'
         );
       }
 
-      // Extract account ID from arguments or environment
-      const accountId = (args.accountId as string) || process.env.BLUEMATADOR_ACCOUNT_ID;
+      const accountId = args.accountId as string;
       if (!accountId) {
         throw new McpError(
           ErrorCode.InvalidRequest,
-          'Account ID is required. Provide it via the "accountId" parameter or BLUEMATADOR_ACCOUNT_ID environment variable'
+          'Account ID is required. Find your account ID (UUID format) in your Bluematador account settings'
         );
       }
 
@@ -1384,7 +1376,7 @@ class BluematadorMCPServer {
       args.accountId = accountId;
 
       // Create a new client for each request to support different API keys
-      const baseUrl = (args.baseUrl as string) || process.env.BLUEMATADOR_BASE_URL || 'https://app.bluematador.com';
+      const baseUrl = (args.baseUrl as string) || 'https://app.bluematador.com';
       const apiClient = new BluematadorApiClient({
         apiKey,
         baseUrl
