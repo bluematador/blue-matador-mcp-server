@@ -33,11 +33,11 @@ class BluematadorMCPServer {
     return {
       apiKey: {
         type: 'string' as const,
-        description: 'Bluematador API key - Get from https://app.bluematador.com/settings/api'
+        description: 'Bluematador API key - Get from https://app.bluematador.com/ur/app#/account/apikeys'
       },
       accountId: {
         type: 'string' as const,
-        description: 'Bluematador account ID in UUID format - Find in your account settings'
+        description: 'Bluematador account ID in UUID format - Get from https://app.bluematador.com/ur/app#/account/apikeys'
       }
     };
   }
@@ -1360,7 +1360,7 @@ class BluematadorMCPServer {
       if (!apiKey) {
         throw new McpError(
           ErrorCode.InvalidRequest,
-          'API key is required. Get your API key from https://app.bluematador.com/settings/api'
+          'API key is required. Get your API key from https://app.bluematador.com/ur/app#/account/apikeys'
         );
       }
 
@@ -1368,7 +1368,7 @@ class BluematadorMCPServer {
       if (!accountId) {
         throw new McpError(
           ErrorCode.InvalidRequest,
-          'Account ID is required. Find your account ID (UUID format) in your Bluematador account settings'
+          'Account ID is required. Get your account ID (UUID format) from https://app.bluematador.com/ur/app#/account/apikeys'
         );
       }
 

@@ -23,8 +23,7 @@ That's it! No npm install, no local setup, no configuration files.
 
 When using the remote server, you'll need to provide your Bluematador credentials with each request:
 
-1. Get your **API Key** from [Bluematador Settings → API Keys](https://app.bluematador.com/settings/api)
-2. Get your **Account ID** (UUID format) from your account settings
+1. Get your **API Key** and **Account ID** from [Bluematador Settings → API Keys](https://app.bluematador.com/ur/app#/account/apikeys)
 
 Then, when asking Claude to use Bluematador tools, include your credentials:
 
