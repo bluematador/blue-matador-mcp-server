@@ -741,6 +741,29 @@ class BluematadorMCPServer {
                   items: {
                     type: 'string'
                   }
+                },
+                schedule: {
+                  type: 'object',
+                  description: 'Time period when the mute rule is active (optional)',
+                  properties: {
+                    start: {
+                      type: 'string',
+                      description: 'Start time in ISO 8601 format (e.g., 2025-01-01T00:00:00Z)'
+                    },
+                    end: {
+                      type: 'string',
+                      description: 'End time in ISO 8601 format (e.g., 2025-01-01T23:59:59Z)'
+                    },
+                    timezone: {
+                      type: 'string',
+                      description: 'IANA timezone identifier (e.g., UTC, America/New_York)'
+                    },
+                    repeatIntervalDays: {
+                      type: 'number',
+                      description: 'Number of days after which to repeat the schedule (optional)'
+                    }
+                  },
+                  required: ['start', 'end', 'timezone']
                 }
               },
               required: [...this.getAuthRequiredFields(), 'hide']
@@ -1973,9 +1996,17 @@ class BluematadorMCPServer {
       };
     }
 
-    const rulesList = muteRules.map(rule =>
-      `- Rule ID: ${rule.id}\n  Hide: ${rule.hide}\n  Active: ${rule.active}\n  Resource: ${(rule.resource && rule.resource.arn) ? rule.resource.arn : 'All resources'}\n  Projects: ${rule.projects ? rule.projects.length : 0}\n  Regions: ${rule.regions ? rule.regions.length : 0}`
-    ).join('\n\n');
+    const rulesList = muteRules.map(rule => {
+      let scheduleInfo = '';
+      if (rule.schedule) {
+        scheduleInfo = `\n  Schedule: ${rule.schedule.start} to ${rule.schedule.end} (${rule.schedule.timezone})`;
+        if (rule.schedule.repeatIntervalDays) {
+          scheduleInfo += `\n  Repeats every: ${rule.schedule.repeatIntervalDays} days`;
+        }
+      }
+
+      return `- Rule ID: ${rule.id}\n  Hide: ${rule.hide}\n  Active: ${rule.active}\n  Resource: ${(rule.resource && rule.resource.arn) ? rule.resource.arn : 'All resources'}\n  Projects: ${rule.projects ? rule.projects.length : 0}\n  Regions: ${rule.regions ? rule.regions.length : 0}${scheduleInfo}`;
+    }).join('\n\n');
 
     return {
       content: [
@@ -1988,21 +2019,30 @@ class BluematadorMCPServer {
   }
 
   private async handleCreateMuteRule(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, hide, resource, projects, regions } = args;
+    const { accountId, hide, resource, projects, regions, schedule } = args;
     const data: CreateMuteRuleData = {
       hide,
       resource,
       projects,
-      regions
+      regions,
+      schedule
     };
 
     await apiClient.createMuteRule(accountId, data);
+
+    let scheduleInfo = '';
+    if (schedule) {
+      scheduleInfo = `\n- Schedule: ${schedule.start} to ${schedule.end} (${schedule.timezone})`;
+      if (schedule.repeatIntervalDays) {
+        scheduleInfo += `\n- Repeats every: ${schedule.repeatIntervalDays} days`;
+      }
+    }
 
     return {
       content: [
         {
           type: 'text',
-          text: `Mute rule created successfully!\n\nDetails:\n- Hide events: ${hide}\n- Resource: ${(resource && resource.arn) ? resource.arn : 'All resources'}\n- Projects: ${projects ? projects.length : 0}\n- Regions: ${regions ? regions.length : 0}`
+          text: `Mute rule created successfully!\n\nDetails:\n- Hide events: ${hide}\n- Resource: ${(resource && resource.arn) ? resource.arn : 'All resources'}\n- Projects: ${projects ? projects.length : 0}\n- Regions: ${regions ? regions.length : 0}${scheduleInfo}`
         }
       ]
     };
