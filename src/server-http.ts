@@ -57,6 +57,24 @@ class BluematadorHTTPServer {
     // Main MCP endpoint using Streamable HTTP transport
     app.post('/mcp', async (req, res) => {
       try {
+        // Extract credentials from HTTP headers (per-user credentials)
+        const apiKey = req.headers['bluematador_api_key'] as string;
+        const accountId = req.headers['bluematador_account_id'] as string;
+        const baseUrl = req.headers['bluematador_base_url'] as string;
+
+        // Validate credentials are provided
+        if (!apiKey || !accountId) {
+          res.status(401).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32001,
+              message: 'Missing credentials. Please provide BLUEMATADOR_API_KEY and BLUEMATADOR_ACCOUNT_ID headers.'
+            },
+            id: null
+          });
+          return;
+        }
+
         // Create a new transport for each request to prevent request ID collisions
         // Different clients may use the same JSON-RPC request IDs
         const transport = new StreamableHTTPServerTransport({
@@ -68,8 +86,8 @@ class BluematadorHTTPServer {
           transport.close();
         });
 
-        // Create a new MCP server instance for this connection
-        const mcpServer = new StdioServer();
+        // Create a new MCP server instance with per-user credentials
+        const mcpServer = new StdioServer(apiKey, accountId, baseUrl);
         await mcpServer.connect(transport);
 
         // Handle the request
@@ -99,7 +117,11 @@ class BluematadorHTTPServer {
         console.error(JSON.stringify({
           mcpServers: {
             bluematador: {
-              url: `http://localhost:${port}/mcp`
+              url: `http://localhost:${port}/mcp`,
+              headers: {
+                'BLUEMATADOR_API_KEY': 'your-api-key-here',
+                'BLUEMATADOR_ACCOUNT_ID': 'your-account-id-here'
+              }
             }
           }
         }, null, 2));

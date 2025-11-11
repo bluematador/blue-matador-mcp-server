@@ -28,32 +28,49 @@ import {
 
 class BluematadorMCPServer {
   private server: Server;
+  private apiClient: BluematadorApiClient;
+  private readonly accountId: string;
 
-  private getBaseAuthProperties() {
-    return {
-      apiKey: {
-        type: 'string' as const,
-        description: 'Bluematador API key - Get from https://app.bluematador.com/ur/app#/account/apikeys'
+  constructor(apiKey?: string, accountId?: string, baseUrl?: string) {
+    // Get credentials from constructor args or environment variables
+    const finalApiKey = apiKey || process.env.BLUEMATADOR_API_KEY;
+    const finalAccountId = accountId || process.env.BLUEMATADOR_ACCOUNT_ID;
+    const finalBaseUrl = baseUrl || process.env.BLUEMATADOR_BASE_URL || 'https://app.bluematador.com';
+
+    if (!finalApiKey) {
+      throw new Error(
+        'BLUEMATADOR_API_KEY is required. Set it as an environment variable or pass it to the constructor.\n' +
+        'Get your API key from: https://app.bluematador.com/ur/app#/account/apikeys'
+      );
+    }
+
+    if (!finalAccountId) {
+      throw new Error(
+        'BLUEMATADOR_ACCOUNT_ID is required. Set it as an environment variable or pass it to the constructor.\n' +
+        'Get your account ID from: https://app.bluematador.com/ur/app#/account/apikeys'
+      );
+    }
+
+    this.accountId = finalAccountId;
+    this.apiClient = new BluematadorApiClient({
+      apiKey: finalApiKey,
+      baseUrl: finalBaseUrl
+    });
+
+    this.server = new Server(
+      {
+        name: 'bluematador-mcp-server',
+        version: '1.0.0',
       },
-      accountId: {
-        type: 'string' as const,
-        description: 'Bluematador account ID in UUID format - Get from https://app.bluematador.com/ur/app#/account/apikeys'
+      {
+        capabilities: {
+          tools: {},
+        },
       }
-    };
-  }
+    );
 
-  private getOptionalProperties() {
-    return {
-      baseUrl: {
-        type: 'string' as const,
-        description: 'Bluematador base URL (optional, defaults to https://app.bluematador.com)'
-      }
-    };
-  }
-
-  private getAuthRequiredFields() {
-    // API key and account ID are always required
-    return ['apiKey', 'accountId'];
+    this.setupToolHandlers();
+    this.setupErrorHandling();
   }
 
   private formatResourceInfo(source: any): string {
@@ -242,23 +259,6 @@ class BluematadorMCPServer {
     return errorInfo;
   }
 
-  constructor() {
-    this.server = new Server(
-      {
-        name: 'bluematador-mcp-server',
-        version: '1.0.0',
-      },
-      {
-        capabilities: {
-          tools: {},
-        },
-      }
-    );
-
-    this.setupToolHandlers();
-    this.setupErrorHandling();
-  }
-
   private setupErrorHandling(): void {
     this.server.onerror = (error) => console.error('[MCP Error]', error);
     process.on('SIGINT', async () => {
@@ -277,8 +277,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 name: {
                   type: 'string',
                   description: 'Name for the AWS integration'
@@ -292,7 +290,7 @@ class BluematadorMCPServer {
                   description: 'External ID for the AWS role'
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'name', 'roleArn', 'externalId']
+              required: ['name', 'roleArn', 'externalId']
             }
           },
           {
@@ -301,8 +299,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 name: {
                   type: 'string',
                   description: 'Name for the Azure integration'
@@ -324,7 +320,7 @@ class BluematadorMCPServer {
                   description: 'Azure client secret'
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'name', 'subscriptionId', 'tenantId', 'applicationId', 'secret']
+              required: ['name', 'subscriptionId', 'tenantId', 'applicationId', 'secret']
             }
           },
           {
@@ -333,10 +329,8 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties()
               },
-              required: [...this.getAuthRequiredFields()]
+              required: []
             }
           },
           {
@@ -345,8 +339,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 inboundId: {
                   type: 'string',
                   description: 'Integration ID (UUID format)'
@@ -364,7 +356,7 @@ class BluematadorMCPServer {
                   description: 'External ID for the AWS role'
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'inboundId', 'name', 'roleArn', 'externalId']
+              required: ['inboundId', 'name', 'roleArn', 'externalId']
             }
           },
           {
@@ -373,8 +365,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 inboundId: {
                   type: 'string',
                   description: 'Integration ID (UUID format)'
@@ -400,7 +390,7 @@ class BluematadorMCPServer {
                   description: 'Azure client secret'
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'inboundId', 'name', 'subscriptionId', 'tenantId', 'applicationId', 'secret']
+              required: ['inboundId', 'name', 'subscriptionId', 'tenantId', 'applicationId', 'secret']
             }
           },
           {
@@ -409,14 +399,12 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 inboundId: {
                   type: 'string',
                   description: 'Integration ID (UUID format)'
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'inboundId']
+              required: ['inboundId']
             }
           },
           {
@@ -425,14 +413,12 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 inboundId: {
                   type: 'string',
                   description: 'Integration ID (UUID format)'
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'inboundId']
+              required: ['inboundId']
             }
           },
           {
@@ -441,14 +427,12 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 inboundId: {
                   type: 'string',
                   description: 'Integration ID (UUID format)'
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'inboundId']
+              required: ['inboundId']
             }
           },
           // Events Management
@@ -458,8 +442,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 start: {
                   type: 'string',
                   description: 'Start time in ISO 8601 format (e.g., 2023-10-23T21:44:58Z)'
@@ -473,7 +455,7 @@ class BluematadorMCPServer {
                   description: 'Project ID to filter events (optional)'
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'start', 'end']
+              required: ['start', 'end']
             }
           },
           {
@@ -482,14 +464,12 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 project: {
                   type: 'string',
                   description: 'Project ID to filter events (optional)'
                 }
               },
-              required: [...this.getAuthRequiredFields()]
+              required: []
             }
           },
           {
@@ -498,14 +478,12 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 project: {
                   type: 'string',
                   description: 'Project ID to filter events (optional)'
                 }
               },
-              required: [...this.getAuthRequiredFields()]
+              required: []
             }
           },
           // Projects
@@ -515,10 +493,8 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties()
               },
-              required: [...this.getAuthRequiredFields()]
+              required: []
             }
           },
           // Users Management
@@ -528,10 +504,8 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties()
               },
-              required: [...this.getAuthRequiredFields()]
+              required: []
             }
           },
           {
@@ -540,8 +514,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 users: {
                   type: 'array',
                   description: 'Array of users to invite',
@@ -562,7 +534,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'users']
+              required: ['users']
             }
           },
           // Notifications
@@ -572,10 +544,8 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties()
               },
-              required: [...this.getAuthRequiredFields()]
+              required: []
             }
           },
           {
@@ -584,8 +554,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 email: {
                   type: 'string',
                   format: 'email',
@@ -599,7 +567,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'email', 'severities']
+              required: ['email', 'severities']
             }
           },
           {
@@ -608,8 +576,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 name: {
                   type: 'string',
                   description: 'Name for the PagerDuty integration'
@@ -634,7 +600,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'name', 'account', 'serviceName', 'serviceSecret', 'severities']
+              required: ['name', 'account', 'serviceName', 'serviceSecret', 'severities']
             }
           },
           {
@@ -643,14 +609,12 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 outboundId: {
                   type: 'string',
                   description: 'Notification ID (UUID format)'
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'outboundId']
+              required: ['outboundId']
             }
           },
           {
@@ -659,14 +623,12 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 outboundId: {
                   type: 'string',
                   description: 'Notification ID (UUID format)'
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'outboundId']
+              required: ['outboundId']
             }
           },
           {
@@ -675,14 +637,12 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 outboundId: {
                   type: 'string',
                   description: 'Notification ID (UUID format)'
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'outboundId']
+              required: ['outboundId']
             }
           },
           // Mute Rules
@@ -692,14 +652,12 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 includeInactive: {
                   type: 'boolean',
                   description: 'Include inactive mute rules (optional)'
                 }
               },
-              required: [...this.getAuthRequiredFields()]
+              required: []
             }
           },
           {
@@ -708,8 +666,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 hide: {
                   type: 'boolean',
                   description: 'If true, hide events completely. If false, show but mute them.'
@@ -743,7 +699,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'hide']
+              required: ['hide']
             }
           },
           {
@@ -752,10 +708,8 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties()
               },
-              required: [...this.getAuthRequiredFields()]
+              required: []
             }
           },
           // Additional Notification Types
@@ -765,8 +719,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 name: {
                   type: 'string',
                   description: 'Name for the OpsGenie integration'
@@ -783,7 +735,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'name', 'apikey', 'severities']
+              required: ['name', 'apikey', 'severities']
             }
           },
           {
@@ -792,8 +744,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 name: {
                   type: 'string',
                   description: 'Name for the SNS integration'
@@ -826,7 +776,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'name', 'topicArn', 'accessKeyId', 'secretAccessKey', 'sendResolve', 'sendJson', 'severities']
+              required: ['name', 'topicArn', 'accessKeyId', 'secretAccessKey', 'sendResolve', 'sendJson', 'severities']
             }
           },
           {
@@ -835,8 +785,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 name: {
                   type: 'string',
                   description: 'Name for the VictorOps integration'
@@ -857,7 +805,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'name', 'integrationId', 'routingKey', 'severities']
+              required: ['name', 'integrationId', 'routingKey', 'severities']
             }
           },
           {
@@ -866,8 +814,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 name: {
                   type: 'string',
                   description: 'Name for the SquadCast integration'
@@ -884,7 +830,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'name', 'sourceInstance', 'severities']
+              required: ['name', 'sourceInstance', 'severities']
             }
           },
           {
@@ -893,8 +839,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 name: {
                   type: 'string',
                   description: 'Name for the ServiceNow integration'
@@ -923,7 +867,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'name', 'instanceName', 'username', 'password', 'sourceInstance', 'severities']
+              required: ['name', 'instanceName', 'username', 'password', 'sourceInstance', 'severities']
             }
           },
           // Update Notification Methods
@@ -933,8 +877,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 outboundId: {
                   type: 'string',
                   description: 'Notification ID (UUID format)'
@@ -952,7 +894,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'outboundId', 'email', 'severities']
+              required: ['outboundId', 'email', 'severities']
             }
           },
           {
@@ -961,8 +903,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 outboundId: {
                   type: 'string',
                   description: 'Notification ID (UUID format)'
@@ -991,7 +931,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'outboundId', 'name', 'account', 'serviceName', 'serviceSecret', 'severities']
+              required: ['outboundId', 'name', 'account', 'serviceName', 'serviceSecret', 'severities']
             }
           },
           {
@@ -1000,8 +940,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 outboundId: {
                   type: 'string',
                   description: 'Notification ID (UUID format)'
@@ -1022,7 +960,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'outboundId', 'name', 'apikey', 'severities']
+              required: ['outboundId', 'name', 'apikey', 'severities']
             }
           },
           {
@@ -1031,8 +969,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 outboundId: {
                   type: 'string',
                   description: 'Notification ID (UUID format)'
@@ -1069,7 +1005,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'outboundId', 'name', 'topicArn', 'accessKeyId', 'secretAccessKey', 'sendResolve', 'sendJson', 'severities']
+              required: ['outboundId', 'name', 'topicArn', 'accessKeyId', 'secretAccessKey', 'sendResolve', 'sendJson', 'severities']
             }
           },
           {
@@ -1078,8 +1014,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 outboundId: {
                   type: 'string',
                   description: 'Notification ID (UUID format)'
@@ -1104,7 +1038,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'outboundId', 'name', 'integrationId', 'routingKey', 'severities']
+              required: ['outboundId', 'name', 'integrationId', 'routingKey', 'severities']
             }
           },
           {
@@ -1113,8 +1047,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 outboundId: {
                   type: 'string',
                   description: 'Notification ID (UUID format)'
@@ -1135,7 +1067,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'outboundId', 'name', 'sourceInstance', 'severities']
+              required: ['outboundId', 'name', 'sourceInstance', 'severities']
             }
           },
           {
@@ -1144,8 +1076,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 outboundId: {
                   type: 'string',
                   description: 'Notification ID (UUID format)'
@@ -1178,7 +1108,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'outboundId', 'name', 'instanceName', 'username', 'password', 'sourceInstance', 'severities']
+              required: ['outboundId', 'name', 'instanceName', 'username', 'password', 'sourceInstance', 'severities']
             }
           },
           // Metrics
@@ -1188,8 +1118,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 metrics: {
                   type: 'string',
                   description: 'Metric name to query (e.g., "aws.ec2.cpuutilization")'
@@ -1211,7 +1139,7 @@ class BluematadorMCPServer {
                   description: 'Grouping dimensions (optional)'
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'metrics', 'agg', 'start', 'end']
+              required: ['metrics', 'agg', 'start', 'end']
             }
           },
           // Advanced Mute Rules
@@ -1221,10 +1149,8 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties()
               },
-              required: [...this.getAuthRequiredFields()]
+              required: []
             }
           },
           {
@@ -1233,8 +1159,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 page: {
                   type: 'number',
                   description: 'Page number for pagination (optional)'
@@ -1244,7 +1168,7 @@ class BluematadorMCPServer {
                   description: 'Number of resources per page (optional)'
                 }
               },
-              required: [...this.getAuthRequiredFields()]
+              required: []
             }
           },
           {
@@ -1253,14 +1177,12 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 muteId: {
                   type: 'string',
                   description: 'Mute rule ID to delete'
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'muteId']
+              required: ['muteId']
             }
           },
           {
@@ -1269,8 +1191,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 serviceName: {
                   type: 'string',
                   description: 'Service name (e.g., "sqs", "rds", "ec2", "lambda")'
@@ -1302,7 +1222,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'serviceName']
+              required: ['serviceName']
             }
           },
           {
@@ -1311,8 +1231,6 @@ class BluematadorMCPServer {
             inputSchema: {
               type: 'object',
               properties: {
-                ...this.getBaseAuthProperties(),
-                ...this.getOptionalProperties(),
                 resourcePattern: {
                   type: 'string',
                   description: 'Wildcard pattern to match resource names/ARNs (e.g., "sqs-*", "*-prod", "app-*-db"). Use * for any characters.'
@@ -1341,7 +1259,7 @@ class BluematadorMCPServer {
                   }
                 }
               },
-              required: [...this.getAuthRequiredFields(), 'resourcePattern']
+              required: ['resourcePattern']
             }
           }
         ]
@@ -1351,170 +1269,141 @@ class BluematadorMCPServer {
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
 
-      if (!args) {
-        throw new McpError(ErrorCode.InvalidParams, 'Arguments are required');
-      }
-
-      // Extract API key and account ID from arguments
-      const apiKey = args.apiKey as string;
-      if (!apiKey) {
-        throw new McpError(
-          ErrorCode.InvalidRequest,
-          'API key is required. Get your API key from https://app.bluematador.com/ur/app#/account/apikeys'
-        );
-      }
-
-      const accountId = args.accountId as string;
-      if (!accountId) {
-        throw new McpError(
-          ErrorCode.InvalidRequest,
-          'Account ID is required. Get your account ID (UUID format) from https://app.bluematador.com/ur/app#/account/apikeys'
-        );
-      }
-
-      // Add accountId to args for handlers that expect it
-      args.accountId = accountId;
-
-      // Create a new client for each request to support different API keys
-      const baseUrl = (args.baseUrl as string) || 'https://app.bluematador.com';
-      const apiClient = new BluematadorApiClient({
-        apiKey,
-        baseUrl
-      });
+      const finalArgs = args || {};
 
       try {
         switch (name) {
           case 'create_aws_integration':
-            return await this.handleCreateAWSIntegration(args, apiClient);
+            return await this.handleCreateAWSIntegration(finalArgs);
 
           case 'create_azure_integration':
-            return await this.handleCreateAzureIntegration(args, apiClient);
+            return await this.handleCreateAzureIntegration(finalArgs);
 
           case 'list_integrations':
-            return await this.handleListIntegrations(args, apiClient);
+            return await this.handleListIntegrations(finalArgs);
 
           case 'update_aws_integration':
-            return await this.handleUpdateAWSIntegration(args, apiClient);
+            return await this.handleUpdateAWSIntegration(finalArgs);
 
           case 'update_azure_integration':
-            return await this.handleUpdateAzureIntegration(args, apiClient);
+            return await this.handleUpdateAzureIntegration(finalArgs);
 
           case 'enable_integration':
-            return await this.handleEnableIntegration(args, apiClient);
+            return await this.handleEnableIntegration(finalArgs);
 
           case 'disable_integration':
-            return await this.handleDisableIntegration(args, apiClient);
+            return await this.handleDisableIntegration(finalArgs);
 
           case 'delete_integration':
-            return await this.handleDeleteIntegration(args, apiClient);
+            return await this.handleDeleteIntegration(finalArgs);
 
           // Events
           case 'get_opened_events':
-            return await this.handleGetOpenedEvents(args, apiClient);
+            return await this.handleGetOpenedEvents(finalArgs);
 
           case 'get_active_events':
-            return await this.handleGetActiveEvents(args, apiClient);
+            return await this.handleGetActiveEvents(finalArgs);
 
           case 'get_active_events_summary':
-            return await this.handleGetActiveEventsSummary(args, apiClient);
+            return await this.handleGetActiveEventsSummary(finalArgs);
 
           // Projects
           case 'list_projects':
-            return await this.handleListProjects(args, apiClient);
+            return await this.handleListProjects(finalArgs);
 
           // Users
           case 'list_users':
-            return await this.handleListUsers(args, apiClient);
+            return await this.handleListUsers(finalArgs);
 
           case 'invite_users':
-            return await this.handleInviteUsers(args, apiClient);
+            return await this.handleInviteUsers(finalArgs);
 
           // Notifications
           case 'list_notifications':
-            return await this.handleListNotifications(args, apiClient);
+            return await this.handleListNotifications(finalArgs);
 
           case 'create_email_notification':
-            return await this.handleCreateEmailNotification(args, apiClient);
+            return await this.handleCreateEmailNotification(finalArgs);
 
           case 'create_pagerduty_notification':
-            return await this.handleCreatePagerDutyNotification(args, apiClient);
+            return await this.handleCreatePagerDutyNotification(finalArgs);
 
           case 'enable_notification':
-            return await this.handleEnableNotification(args, apiClient);
+            return await this.handleEnableNotification(finalArgs);
 
           case 'disable_notification':
-            return await this.handleDisableNotification(args, apiClient);
+            return await this.handleDisableNotification(finalArgs);
 
           case 'delete_notification':
-            return await this.handleDeleteNotification(args, apiClient);
+            return await this.handleDeleteNotification(finalArgs);
 
           // Mute Rules
           case 'list_mute_rules':
-            return await this.handleListMuteRules(args, apiClient);
+            return await this.handleListMuteRules(finalArgs);
 
           case 'create_mute_rule':
-            return await this.handleCreateMuteRule(args, apiClient);
+            return await this.handleCreateMuteRule(finalArgs);
 
           case 'get_mute_regions':
-            return await this.handleGetMuteRegions(args, apiClient);
+            return await this.handleGetMuteRegions(finalArgs);
 
           // Additional Notification Types
           case 'create_opsgenie_notification':
-            return await this.handleCreateOpsGenieNotification(args, apiClient);
+            return await this.handleCreateOpsGenieNotification(finalArgs);
 
           case 'create_sns_notification':
-            return await this.handleCreateSNSNotification(args, apiClient);
+            return await this.handleCreateSNSNotification(finalArgs);
 
           case 'create_victorops_notification':
-            return await this.handleCreateVictorOpsNotification(args, apiClient);
+            return await this.handleCreateVictorOpsNotification(finalArgs);
 
           case 'create_squadcast_notification':
-            return await this.handleCreateSquadCastNotification(args, apiClient);
+            return await this.handleCreateSquadCastNotification(finalArgs);
 
           case 'create_servicenow_notification':
-            return await this.handleCreateServiceNowNotification(args, apiClient);
+            return await this.handleCreateServiceNowNotification(finalArgs);
 
           // Update Notification Methods
           case 'update_email_notification':
-            return await this.handleUpdateEmailNotification(args, apiClient);
+            return await this.handleUpdateEmailNotification(finalArgs);
 
           case 'update_pagerduty_notification':
-            return await this.handleUpdatePagerDutyNotification(args, apiClient);
+            return await this.handleUpdatePagerDutyNotification(finalArgs);
 
           case 'update_opsgenie_notification':
-            return await this.handleUpdateOpsGenieNotification(args, apiClient);
+            return await this.handleUpdateOpsGenieNotification(finalArgs);
 
           case 'update_sns_notification':
-            return await this.handleUpdateSNSNotification(args, apiClient);
+            return await this.handleUpdateSNSNotification(finalArgs);
 
           case 'update_victorops_notification':
-            return await this.handleUpdateVictorOpsNotification(args, apiClient);
+            return await this.handleUpdateVictorOpsNotification(finalArgs);
 
           case 'update_squadcast_notification':
-            return await this.handleUpdateSquadCastNotification(args, apiClient);
+            return await this.handleUpdateSquadCastNotification(finalArgs);
 
           case 'update_servicenow_notification':
-            return await this.handleUpdateServiceNowNotification(args, apiClient);
+            return await this.handleUpdateServiceNowNotification(finalArgs);
 
           // Metrics
           case 'get_metrics':
-            return await this.handleGetMetrics(args, apiClient);
+            return await this.handleGetMetrics(finalArgs);
 
           // Advanced Mute Rules
           case 'get_mute_monitors':
-            return await this.handleGetMuteMonitors(args, apiClient);
+            return await this.handleGetMuteMonitors(finalArgs);
 
           case 'get_mute_resources':
-            return await this.handleGetMuteResources(args, apiClient);
+            return await this.handleGetMuteResources(finalArgs);
 
           case 'delete_mute_rule':
-            return await this.handleDeleteMuteRule(args, apiClient);
+            return await this.handleDeleteMuteRule(finalArgs);
 
           case 'mute_monitors_by_service':
-            return await this.handleMuteMonitorsByService(args, apiClient);
+            return await this.handleMuteMonitorsByService(finalArgs);
 
           case 'mute_resources_by_wildcard':
-            return await this.handleMuteResourcesByWildcard(args, apiClient);
+            return await this.handleMuteResourcesByWildcard(finalArgs);
 
           default:
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
@@ -1549,11 +1438,11 @@ class BluematadorMCPServer {
     });
   }
 
-  private async handleCreateAWSIntegration(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, name, roleArn, externalId } = args;
+  private async handleCreateAWSIntegration(args: any) {
+    const { name, roleArn, externalId } = args;
     const integrationData: AWSIntegrationData = { name, roleArn, externalId };
 
-    const result = await apiClient.createAWSIntegration(accountId, integrationData);
+    const result = await this.apiClient.createAWSIntegration(this.accountId, integrationData);
 
     return {
       content: [
@@ -1565,11 +1454,11 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateAzureIntegration(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, name, subscriptionId, tenantId, applicationId, secret } = args;
+  private async handleCreateAzureIntegration(args: any) {
+    const { name, subscriptionId, tenantId, applicationId, secret } = args;
     const integrationData: AzureIntegrationData = { name, subscriptionId, tenantId, applicationId, secret };
 
-    const result = await apiClient.createAzureIntegration(accountId, integrationData);
+    const result = await this.apiClient.createAzureIntegration(this.accountId, integrationData);
 
     return {
       content: [
@@ -1581,9 +1470,9 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleListIntegrations(args: any, apiClient: BluematadorApiClient) {
-    const { accountId } = args;
-    const integrations = await apiClient.listIntegrations(accountId);
+  private async handleListIntegrations(args: any) {
+    
+    const integrations = await this.apiClient.listIntegrations(this.accountId);
 
     if (integrations.length === 0) {
       return {
@@ -1611,11 +1500,11 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateAWSIntegration(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, inboundId, name, roleArn, externalId } = args;
+  private async handleUpdateAWSIntegration(args: any) {
+    const { inboundId, name, roleArn, externalId } = args;
     const integrationData: AWSIntegrationData = { name, roleArn, externalId };
 
-    const result = await apiClient.updateAWSIntegration(accountId, inboundId, integrationData);
+    const result = await this.apiClient.updateAWSIntegration(this.accountId, inboundId, integrationData);
 
     return {
       content: [
@@ -1627,11 +1516,11 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateAzureIntegration(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, inboundId, name, subscriptionId, tenantId, applicationId, secret } = args;
+  private async handleUpdateAzureIntegration(args: any) {
+    const { inboundId, name, subscriptionId, tenantId, applicationId, secret } = args;
     const integrationData: AzureIntegrationData = { name, subscriptionId, tenantId, applicationId, secret };
 
-    const result = await apiClient.updateAzureIntegration(accountId, inboundId, integrationData);
+    const result = await this.apiClient.updateAzureIntegration(this.accountId, inboundId, integrationData);
 
     return {
       content: [
@@ -1643,9 +1532,9 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleEnableIntegration(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, inboundId } = args;
-    await apiClient.enableIntegration(accountId, inboundId);
+  private async handleEnableIntegration(args: any) {
+    const { inboundId } = args;
+    await this.apiClient.enableIntegration(this.accountId, inboundId);
 
     return {
       content: [
@@ -1657,9 +1546,9 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleDisableIntegration(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, inboundId } = args;
-    await apiClient.disableIntegration(accountId, inboundId);
+  private async handleDisableIntegration(args: any) {
+    const { inboundId } = args;
+    await this.apiClient.disableIntegration(this.accountId, inboundId);
 
     return {
       content: [
@@ -1671,9 +1560,9 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleDeleteIntegration(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, inboundId } = args;
-    await apiClient.deleteIntegration(accountId, inboundId);
+  private async handleDeleteIntegration(args: any) {
+    const { inboundId } = args;
+    await this.apiClient.deleteIntegration(this.accountId, inboundId);
 
     return {
       content: [
@@ -1686,9 +1575,9 @@ class BluematadorMCPServer {
   }
 
   // Events handlers
-  private async handleGetOpenedEvents(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, start, end, project } = args;
-    const events = await apiClient.getOpenedEvents(accountId, start, end, project);
+  private async handleGetOpenedEvents(args: any) {
+    const { start, end, project } = args;
+    const events = await this.apiClient.getOpenedEvents(this.accountId, start, end, project);
 
     if (events.length === 0) {
       return {
@@ -1722,9 +1611,9 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleGetActiveEvents(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, project } = args;
-    const events = await apiClient.getActiveEvents(accountId, project);
+  private async handleGetActiveEvents(args: any) {
+    const { project } = args;
+    const events = await this.apiClient.getActiveEvents(this.accountId, project);
 
     if (events.length === 0) {
       return {
@@ -1758,9 +1647,9 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleGetActiveEventsSummary(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, project } = args;
-    const summary = await apiClient.getActiveEventsSummary(accountId, project);
+  private async handleGetActiveEventsSummary(args: any) {
+    const { project } = args;
+    const summary = await this.apiClient.getActiveEventsSummary(this.accountId, project);
 
     return {
       content: [
@@ -1773,9 +1662,9 @@ class BluematadorMCPServer {
   }
 
   // Projects handlers
-  private async handleListProjects(args: any, apiClient: BluematadorApiClient) {
-    const { accountId } = args;
-    const projects = await apiClient.listProjects(accountId);
+  private async handleListProjects(args: any) {
+    
+    const projects = await this.apiClient.listProjects(this.accountId);
 
     if (projects.length === 0) {
       return {
@@ -1801,9 +1690,9 @@ class BluematadorMCPServer {
   }
 
   // Users handlers
-  private async handleListUsers(args: any, apiClient: BluematadorApiClient) {
-    const { accountId } = args;
-    const result = await apiClient.listUsers(accountId);
+  private async handleListUsers(args: any) {
+    
+    const result = await this.apiClient.listUsers(this.accountId);
 
     if (result.users.length === 0) {
       return {
@@ -1828,9 +1717,9 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleInviteUsers(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, users } = args;
-    await apiClient.inviteUsers(accountId, users as InviteUserData[]);
+  private async handleInviteUsers(args: any) {
+    const { users } = args;
+    await this.apiClient.inviteUsers(this.accountId, users as InviteUserData[]);
 
     const userList = users.map((user: InviteUserData) => `- ${user.email} (${user.admin ? 'Admin' : 'User'})`).join('\n');
 
@@ -1838,16 +1727,16 @@ class BluematadorMCPServer {
       content: [
         {
           type: 'text',
-          text: `Successfully invited ${users.length} user(s) to account ${accountId}:\n\n${userList}\n\nUsers will receive email invitations to set up their accounts.`
+          text: `Successfully invited ${users.length} user(s) to account ${this.accountId}:\n\n${userList}\n\nUsers will receive email invitations to set up their accounts.`
         }
       ]
     };
   }
 
   // Notifications handlers
-  private async handleListNotifications(args: any, apiClient: BluematadorApiClient) {
-    const { accountId } = args;
-    const notifications = await apiClient.listNotifications(accountId);
+  private async handleListNotifications(args: any) {
+    
+    const notifications = await this.apiClient.listNotifications(this.accountId);
 
     if (notifications.length === 0) {
       return {
@@ -1874,14 +1763,14 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateEmailNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, email, severities } = args;
+  private async handleCreateEmailNotification(args: any) {
+    const { email, severities } = args;
     const data: EmailNotificationData = {
       email,
       severities: { all: severities }
     };
 
-    const result = await apiClient.createEmailNotification(accountId, data);
+    const result = await this.apiClient.createEmailNotification(this.accountId, data);
 
     return {
       content: [
@@ -1893,8 +1782,8 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreatePagerDutyNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, name, account, serviceName, serviceSecret, severities } = args;
+  private async handleCreatePagerDutyNotification(args: any) {
+    const { name, account, serviceName, serviceSecret, severities } = args;
     const data: PagerDutyNotificationData = {
       name,
       account,
@@ -1903,7 +1792,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await apiClient.createPagerDutyNotification(accountId, data);
+    const result = await this.apiClient.createPagerDutyNotification(this.accountId, data);
 
     return {
       content: [
@@ -1915,9 +1804,9 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleEnableNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, outboundId } = args;
-    await apiClient.enableNotification(accountId, outboundId);
+  private async handleEnableNotification(args: any) {
+    const { outboundId } = args;
+    await this.apiClient.enableNotification(this.accountId, outboundId);
 
     return {
       content: [
@@ -1929,9 +1818,9 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleDisableNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, outboundId } = args;
-    await apiClient.disableNotification(accountId, outboundId);
+  private async handleDisableNotification(args: any) {
+    const { outboundId } = args;
+    await this.apiClient.disableNotification(this.accountId, outboundId);
 
     return {
       content: [
@@ -1943,9 +1832,9 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleDeleteNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, outboundId } = args;
-    await apiClient.deleteNotification(accountId, outboundId);
+  private async handleDeleteNotification(args: any) {
+    const { outboundId } = args;
+    await this.apiClient.deleteNotification(this.accountId, outboundId);
 
     return {
       content: [
@@ -1958,9 +1847,9 @@ class BluematadorMCPServer {
   }
 
   // Mute Rules handlers
-  private async handleListMuteRules(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, includeInactive } = args;
-    const muteRules = await apiClient.listMuteRules(accountId, includeInactive);
+  private async handleListMuteRules(args: any) {
+    const { includeInactive } = args;
+    const muteRules = await this.apiClient.listMuteRules(this.accountId, includeInactive);
 
     if (muteRules.length === 0) {
       return {
@@ -1987,8 +1876,8 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateMuteRule(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, hide, resource, projects, regions } = args;
+  private async handleCreateMuteRule(args: any) {
+    const { hide, resource, projects, regions } = args;
     const data: CreateMuteRuleData = {
       hide,
       resource,
@@ -1996,7 +1885,7 @@ class BluematadorMCPServer {
       regions
     };
 
-    await apiClient.createMuteRule(accountId, data);
+    await this.apiClient.createMuteRule(this.accountId, data);
 
     return {
       content: [
@@ -2008,9 +1897,9 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleGetMuteRegions(args: any, apiClient: BluematadorApiClient) {
-    const { accountId } = args;
-    const regions = await apiClient.getMuteRegions(accountId);
+  private async handleGetMuteRegions(args: any) {
+    
+    const regions = await this.apiClient.getMuteRegions(this.accountId);
 
     return {
       content: [
@@ -2023,15 +1912,15 @@ class BluematadorMCPServer {
   }
 
   // Additional Notification handlers
-  private async handleCreateOpsGenieNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, name, apikey, severities } = args;
+  private async handleCreateOpsGenieNotification(args: any) {
+    const { name, apikey, severities } = args;
     const data: OpsGenieNotificationData = {
       name,
       apikey,
       severities: { all: severities }
     };
 
-    const result = await apiClient.createOpsGenieNotification(accountId, data);
+    const result = await this.apiClient.createOpsGenieNotification(this.accountId, data);
 
     return {
       content: [
@@ -2043,8 +1932,8 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateSNSNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, name, topicArn, accessKeyId, secretAccessKey, sendResolve, sendJson, severities } = args;
+  private async handleCreateSNSNotification(args: any) {
+    const { name, topicArn, accessKeyId, secretAccessKey, sendResolve, sendJson, severities } = args;
     const data: SNSNotificationData = {
       name,
       topicArn,
@@ -2055,7 +1944,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await apiClient.createSNSNotification(accountId, data);
+    const result = await this.apiClient.createSNSNotification(this.accountId, data);
 
     return {
       content: [
@@ -2067,8 +1956,8 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateVictorOpsNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, name, integrationId, routingKey, severities } = args;
+  private async handleCreateVictorOpsNotification(args: any) {
+    const { name, integrationId, routingKey, severities } = args;
     const data: VictorOpsNotificationData = {
       name,
       integrationId,
@@ -2076,7 +1965,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await apiClient.createVictorOpsNotification(accountId, data);
+    const result = await this.apiClient.createVictorOpsNotification(this.accountId, data);
 
     return {
       content: [
@@ -2088,15 +1977,15 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateSquadCastNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, name, sourceInstance, severities } = args;
+  private async handleCreateSquadCastNotification(args: any) {
+    const { name, sourceInstance, severities } = args;
     const data: SquadCastNotificationData = {
       name,
       sourceInstance,
       severities: { all: severities }
     };
 
-    const result = await apiClient.createSquadCastNotification(accountId, data);
+    const result = await this.apiClient.createSquadCastNotification(this.accountId, data);
 
     return {
       content: [
@@ -2108,8 +1997,8 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateServiceNowNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, name, instanceName, username, password, sourceInstance, severities } = args;
+  private async handleCreateServiceNowNotification(args: any) {
+    const { name, instanceName, username, password, sourceInstance, severities } = args;
     const data: ServiceNowNotificationData = {
       name,
       credentials: {
@@ -2121,7 +2010,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await apiClient.createServiceNowNotification(accountId, data);
+    const result = await this.apiClient.createServiceNowNotification(this.accountId, data);
 
     return {
       content: [
@@ -2134,14 +2023,14 @@ class BluematadorMCPServer {
   }
 
   // Update Notification handlers
-  private async handleUpdateEmailNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, outboundId, email, severities } = args;
+  private async handleUpdateEmailNotification(args: any) {
+    const { outboundId, email, severities } = args;
     const data: EmailNotificationData = {
       email,
       severities: { all: severities }
     };
 
-    const result = await apiClient.updateEmailNotification(accountId, outboundId, data);
+    const result = await this.apiClient.updateEmailNotification(this.accountId, outboundId, data);
 
     return {
       content: [
@@ -2153,8 +2042,8 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdatePagerDutyNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, outboundId, name, account, serviceName, serviceSecret, severities } = args;
+  private async handleUpdatePagerDutyNotification(args: any) {
+    const { outboundId, name, account, serviceName, serviceSecret, severities } = args;
     const data: PagerDutyNotificationData = {
       name,
       account,
@@ -2163,7 +2052,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await apiClient.updatePagerDutyNotification(accountId, outboundId, data);
+    const result = await this.apiClient.updatePagerDutyNotification(this.accountId, outboundId, data);
 
     return {
       content: [
@@ -2175,15 +2064,15 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateOpsGenieNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, outboundId, name, apikey, severities } = args;
+  private async handleUpdateOpsGenieNotification(args: any) {
+    const { outboundId, name, apikey, severities } = args;
     const data: OpsGenieNotificationData = {
       name,
       apikey,
       severities: { all: severities }
     };
 
-    const result = await apiClient.updateOpsGenieNotification(accountId, outboundId, data);
+    const result = await this.apiClient.updateOpsGenieNotification(this.accountId, outboundId, data);
 
     return {
       content: [
@@ -2195,8 +2084,8 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateSNSNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, outboundId, name, topicArn, accessKeyId, secretAccessKey, sendResolve, sendJson, severities } = args;
+  private async handleUpdateSNSNotification(args: any) {
+    const { outboundId, name, topicArn, accessKeyId, secretAccessKey, sendResolve, sendJson, severities } = args;
     const data: SNSNotificationData = {
       name,
       topicArn,
@@ -2207,7 +2096,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await apiClient.updateSNSNotification(accountId, outboundId, data);
+    const result = await this.apiClient.updateSNSNotification(this.accountId, outboundId, data);
 
     return {
       content: [
@@ -2219,8 +2108,8 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateVictorOpsNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, outboundId, name, integrationId, routingKey, severities } = args;
+  private async handleUpdateVictorOpsNotification(args: any) {
+    const { outboundId, name, integrationId, routingKey, severities } = args;
     const data: VictorOpsNotificationData = {
       name,
       integrationId,
@@ -2228,7 +2117,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await apiClient.updateVictorOpsNotification(accountId, outboundId, data);
+    const result = await this.apiClient.updateVictorOpsNotification(this.accountId, outboundId, data);
 
     return {
       content: [
@@ -2240,15 +2129,15 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateSquadCastNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, outboundId, name, sourceInstance, severities } = args;
+  private async handleUpdateSquadCastNotification(args: any) {
+    const { outboundId, name, sourceInstance, severities } = args;
     const data: SquadCastNotificationData = {
       name,
       sourceInstance,
       severities: { all: severities }
     };
 
-    const result = await apiClient.updateSquadCastNotification(accountId, outboundId, data);
+    const result = await this.apiClient.updateSquadCastNotification(this.accountId, outboundId, data);
 
     return {
       content: [
@@ -2260,8 +2149,8 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateServiceNowNotification(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, outboundId, name, instanceName, username, password, sourceInstance, severities } = args;
+  private async handleUpdateServiceNowNotification(args: any) {
+    const { outboundId, name, instanceName, username, password, sourceInstance, severities } = args;
     const data: ServiceNowNotificationData = {
       name,
       credentials: {
@@ -2273,7 +2162,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await apiClient.updateServiceNowNotification(accountId, outboundId, data);
+    const result = await this.apiClient.updateServiceNowNotification(this.accountId, outboundId, data);
 
     return {
       content: [
@@ -2286,10 +2175,10 @@ class BluematadorMCPServer {
   }
 
   // Metrics handler
-  private async handleGetMetrics(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, metrics, agg, start, end, groups } = args;
+  private async handleGetMetrics(args: any) {
+    const { metrics, agg, start, end, groups } = args;
     const query: MetricsQuery = {
-      accountId,
+      accountId: this.accountId,
       metrics,
       agg,
       start,
@@ -2297,7 +2186,7 @@ class BluematadorMCPServer {
       groups
     };
 
-    const result = await apiClient.getMetrics(query);
+    const result = await this.apiClient.getMetrics(query);
 
     return {
       content: [
@@ -2310,9 +2199,9 @@ class BluematadorMCPServer {
   }
 
   // Advanced Mute Rule handlers
-  private async handleGetMuteMonitors(args: any, apiClient: BluematadorApiClient) {
-    const { accountId } = args;
-    const result = await apiClient.getMuteMonitors(accountId);
+  private async handleGetMuteMonitors(args: any) {
+    
+    const result = await this.apiClient.getMuteMonitors(this.accountId);
 
     const monitorsList = Object.entries(result.monitors)
       .map(([service, monitors]) => `**${service}:**\n  ${monitors.join(', ')}`)
@@ -2328,9 +2217,9 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleGetMuteResources(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, page, pageSize } = args;
-    const result = await apiClient.getMuteResources(accountId, page, pageSize);
+  private async handleGetMuteResources(args: any) {
+    const { page, pageSize } = args;
+    const result = await this.apiClient.getMuteResources(this.accountId, page, pageSize);
 
     if (result.resources.length === 0) {
       return {
@@ -2357,9 +2246,9 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleDeleteMuteRule(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, muteId } = args;
-    await apiClient.deleteMuteRule(accountId, muteId);
+  private async handleDeleteMuteRule(args: any) {
+    const { muteId } = args;
+    await this.apiClient.deleteMuteRule(this.accountId, muteId);
 
     return {
       content: [
@@ -2371,11 +2260,11 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleMuteMonitorsByService(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, serviceName, monitorNames, hide = false, projects, regions } = args;
+  private async handleMuteMonitorsByService(args: any) {
+    const { serviceName, monitorNames, hide = false, projects, regions } = args;
 
     // First, get available monitors to validate the service name and get monitor names
-    const availableMonitorsResponse = await apiClient.getMuteMonitors(accountId);
+    const availableMonitorsResponse = await this.apiClient.getMuteMonitors(this.accountId);
     const availableMonitors = availableMonitorsResponse.monitors;
 
     // Find the service in the available monitors (case-insensitive)
@@ -2420,7 +2309,7 @@ class BluematadorMCPServer {
       regions
     };
 
-    await apiClient.createMuteRule(accountId, muteRuleData);
+    await this.apiClient.createMuteRule(this.accountId, muteRuleData);
 
     return {
       content: [
@@ -2439,11 +2328,11 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleMuteResourcesByWildcard(args: any, apiClient: BluematadorApiClient) {
-    const { accountId, resourcePattern, serviceType, hide = false, projects, regions } = args;
+  private async handleMuteResourcesByWildcard(args: any) {
+    const { resourcePattern, serviceType, hide = false, projects, regions } = args;
 
     // Get available resources to find matches
-    const resourcesResponse = await apiClient.getMuteResources(accountId);
+    const resourcesResponse = await this.apiClient.getMuteResources(this.accountId);
     const allResources = resourcesResponse.resources;
 
     if (!allResources || allResources.length === 0) {
@@ -2503,7 +2392,7 @@ class BluematadorMCPServer {
         };
 
         try {
-          await apiClient.createMuteRule(accountId, muteRuleData);
+          await this.apiClient.createMuteRule(this.accountId, muteRuleData);
           muteResults.push(`✅ ${resource.arn}`);
         } catch (error: any) {
           muteResults.push(`❌ ${resource.arn} (Error: ${error.message})`);
