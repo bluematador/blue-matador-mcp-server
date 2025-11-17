@@ -28,8 +28,9 @@ import {
 
 class BluematadorMCPServer {
   private server: Server;
-  private apiClient: BluematadorApiClient;
-  private readonly accountId: string;
+  private apiClient: BluematadorApiClient | null = null;
+  private readonly accountId: string | null = null;
+  private credentialsError: string | null = null;
 
   constructor(apiKey?: string, accountId?: string, baseUrl?: string) {
     // Get credentials from constructor args or environment variables
@@ -37,25 +38,31 @@ class BluematadorMCPServer {
     const finalAccountId = accountId || process.env.BLUEMATADOR_ACCOUNT_ID;
     const finalBaseUrl = baseUrl || process.env.BLUEMATADOR_BASE_URL || 'https://app.bluematador.com';
 
-    if (!finalApiKey) {
-      throw new Error(
-        'BLUEMATADOR_API_KEY is required. Set it as an environment variable or pass it to the constructor.\n' +
-        'Get your API key from: https://app.bluematador.com/ur/app#/account/apikeys'
-      );
-    }
+    // Check if credentials are missing, but don't throw - store the error message instead
+    if (!finalApiKey || !finalAccountId) {
+      const missingCreds = [];
+      if (!finalApiKey) missingCreds.push('BLUEMATADOR_API_KEY');
+      if (!finalAccountId) missingCreds.push('BLUEMATADOR_ACCOUNT_ID');
 
-    if (!finalAccountId) {
-      throw new Error(
-        'BLUEMATADOR_ACCOUNT_ID is required. Set it as an environment variable or pass it to the constructor.\n' +
-        'Get your account ID from: https://app.bluematador.com/ur/app#/account/apikeys'
-      );
+      this.credentialsError = [
+        '❌ Missing Bluematador credentials: ' + missingCreds.join(', '),
+        '',
+        '📋 Please provide credentials as environment variables.',
+        '',
+        '📖 See the setup documentation in the README for configuration instructions:',
+        '   https://github.com/bluematador/blue-matador-mcp-server#quick-start',
+        '',
+        '🔑 Get your credentials from:',
+        '   https://app.bluematador.com/ur/app#/account/apikeys'
+      ].join('\n');
+    } else {
+      // Only initialize the API client if we have credentials
+      this.accountId = finalAccountId;
+      this.apiClient = new BluematadorApiClient({
+        apiKey: finalApiKey,
+        baseUrl: finalBaseUrl
+      });
     }
-
-    this.accountId = finalAccountId;
-    this.apiClient = new BluematadorApiClient({
-      apiKey: finalApiKey,
-      baseUrl: finalBaseUrl
-    });
 
     this.server = new Server(
       {
@@ -1271,6 +1278,18 @@ class BluematadorMCPServer {
 
       const finalArgs = args || {};
 
+      // Check if credentials are missing before attempting any tool call
+      if (this.credentialsError) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: this.credentialsError
+            }
+          ]
+        };
+      }
+
       try {
         switch (name) {
           case 'create_aws_integration':
@@ -1438,11 +1457,19 @@ class BluematadorMCPServer {
     });
   }
 
+  private getApiClient() {
+    if (!this.apiClient || !this.accountId) {
+      throw new Error('API client not initialized - credentials missing');
+    }
+    return { apiClient: this.apiClient, accountId: this.accountId };
+  }
+
   private async handleCreateAWSIntegration(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { name, roleArn, externalId } = args;
     const integrationData: AWSIntegrationData = { name, roleArn, externalId };
 
-    const result = await this.apiClient.createAWSIntegration(this.accountId, integrationData);
+    const result = await apiClient.createAWSIntegration(accountId, integrationData);
 
     return {
       content: [
@@ -1455,10 +1482,11 @@ class BluematadorMCPServer {
   }
 
   private async handleCreateAzureIntegration(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { name, subscriptionId, tenantId, applicationId, secret } = args;
     const integrationData: AzureIntegrationData = { name, subscriptionId, tenantId, applicationId, secret };
 
-    const result = await this.apiClient.createAzureIntegration(this.accountId, integrationData);
+    const result = await apiClient.createAzureIntegration(accountId, integrationData);
 
     return {
       content: [
@@ -1471,8 +1499,9 @@ class BluematadorMCPServer {
   }
 
   private async handleListIntegrations(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     
-    const integrations = await this.apiClient.listIntegrations(this.accountId);
+    const integrations = await apiClient.listIntegrations(accountId);
 
     if (integrations.length === 0) {
       return {
@@ -1501,10 +1530,11 @@ class BluematadorMCPServer {
   }
 
   private async handleUpdateAWSIntegration(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { inboundId, name, roleArn, externalId } = args;
     const integrationData: AWSIntegrationData = { name, roleArn, externalId };
 
-    const result = await this.apiClient.updateAWSIntegration(this.accountId, inboundId, integrationData);
+    const result = await apiClient.updateAWSIntegration(accountId, inboundId, integrationData);
 
     return {
       content: [
@@ -1517,10 +1547,11 @@ class BluematadorMCPServer {
   }
 
   private async handleUpdateAzureIntegration(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { inboundId, name, subscriptionId, tenantId, applicationId, secret } = args;
     const integrationData: AzureIntegrationData = { name, subscriptionId, tenantId, applicationId, secret };
 
-    const result = await this.apiClient.updateAzureIntegration(this.accountId, inboundId, integrationData);
+    const result = await apiClient.updateAzureIntegration(accountId, inboundId, integrationData);
 
     return {
       content: [
@@ -1533,8 +1564,9 @@ class BluematadorMCPServer {
   }
 
   private async handleEnableIntegration(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { inboundId } = args;
-    await this.apiClient.enableIntegration(this.accountId, inboundId);
+    await apiClient.enableIntegration(accountId, inboundId);
 
     return {
       content: [
@@ -1547,8 +1579,9 @@ class BluematadorMCPServer {
   }
 
   private async handleDisableIntegration(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { inboundId } = args;
-    await this.apiClient.disableIntegration(this.accountId, inboundId);
+    await apiClient.disableIntegration(accountId, inboundId);
 
     return {
       content: [
@@ -1561,8 +1594,9 @@ class BluematadorMCPServer {
   }
 
   private async handleDeleteIntegration(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { inboundId } = args;
-    await this.apiClient.deleteIntegration(this.accountId, inboundId);
+    await apiClient.deleteIntegration(accountId, inboundId);
 
     return {
       content: [
@@ -1576,8 +1610,9 @@ class BluematadorMCPServer {
 
   // Events handlers
   private async handleGetOpenedEvents(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { start, end, project } = args;
-    const events = await this.apiClient.getOpenedEvents(this.accountId, start, end, project);
+    const events = await apiClient.getOpenedEvents(accountId, start, end, project);
 
     if (events.length === 0) {
       return {
@@ -1612,8 +1647,9 @@ class BluematadorMCPServer {
   }
 
   private async handleGetActiveEvents(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { project } = args;
-    const events = await this.apiClient.getActiveEvents(this.accountId, project);
+    const events = await apiClient.getActiveEvents(accountId, project);
 
     if (events.length === 0) {
       return {
@@ -1648,8 +1684,9 @@ class BluematadorMCPServer {
   }
 
   private async handleGetActiveEventsSummary(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { project } = args;
-    const summary = await this.apiClient.getActiveEventsSummary(this.accountId, project);
+    const summary = await apiClient.getActiveEventsSummary(accountId, project);
 
     return {
       content: [
@@ -1663,8 +1700,9 @@ class BluematadorMCPServer {
 
   // Projects handlers
   private async handleListProjects(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     
-    const projects = await this.apiClient.listProjects(this.accountId);
+    const projects = await apiClient.listProjects(accountId);
 
     if (projects.length === 0) {
       return {
@@ -1691,8 +1729,9 @@ class BluematadorMCPServer {
 
   // Users handlers
   private async handleListUsers(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     
-    const result = await this.apiClient.listUsers(this.accountId);
+    const result = await apiClient.listUsers(accountId);
 
     if (result.users.length === 0) {
       return {
@@ -1718,8 +1757,9 @@ class BluematadorMCPServer {
   }
 
   private async handleInviteUsers(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { users } = args;
-    await this.apiClient.inviteUsers(this.accountId, users as InviteUserData[]);
+    await apiClient.inviteUsers(accountId, users as InviteUserData[]);
 
     const userList = users.map((user: InviteUserData) => `- ${user.email} (${user.admin ? 'Admin' : 'User'})`).join('\n');
 
@@ -1727,7 +1767,7 @@ class BluematadorMCPServer {
       content: [
         {
           type: 'text',
-          text: `Successfully invited ${users.length} user(s) to account ${this.accountId}:\n\n${userList}\n\nUsers will receive email invitations to set up their accounts.`
+          text: `Successfully invited ${users.length} user(s) to account ${accountId}:\n\n${userList}\n\nUsers will receive email invitations to set up their accounts.`
         }
       ]
     };
@@ -1735,8 +1775,9 @@ class BluematadorMCPServer {
 
   // Notifications handlers
   private async handleListNotifications(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     
-    const notifications = await this.apiClient.listNotifications(this.accountId);
+    const notifications = await apiClient.listNotifications(accountId);
 
     if (notifications.length === 0) {
       return {
@@ -1764,13 +1805,14 @@ class BluematadorMCPServer {
   }
 
   private async handleCreateEmailNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { email, severities } = args;
     const data: EmailNotificationData = {
       email,
       severities: { all: severities }
     };
 
-    const result = await this.apiClient.createEmailNotification(this.accountId, data);
+    const result = await apiClient.createEmailNotification(accountId, data);
 
     return {
       content: [
@@ -1783,6 +1825,7 @@ class BluematadorMCPServer {
   }
 
   private async handleCreatePagerDutyNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { name, account, serviceName, serviceSecret, severities } = args;
     const data: PagerDutyNotificationData = {
       name,
@@ -1792,7 +1835,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await this.apiClient.createPagerDutyNotification(this.accountId, data);
+    const result = await apiClient.createPagerDutyNotification(accountId, data);
 
     return {
       content: [
@@ -1805,8 +1848,9 @@ class BluematadorMCPServer {
   }
 
   private async handleEnableNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { outboundId } = args;
-    await this.apiClient.enableNotification(this.accountId, outboundId);
+    await apiClient.enableNotification(accountId, outboundId);
 
     return {
       content: [
@@ -1819,8 +1863,9 @@ class BluematadorMCPServer {
   }
 
   private async handleDisableNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { outboundId } = args;
-    await this.apiClient.disableNotification(this.accountId, outboundId);
+    await apiClient.disableNotification(accountId, outboundId);
 
     return {
       content: [
@@ -1833,8 +1878,9 @@ class BluematadorMCPServer {
   }
 
   private async handleDeleteNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { outboundId } = args;
-    await this.apiClient.deleteNotification(this.accountId, outboundId);
+    await apiClient.deleteNotification(accountId, outboundId);
 
     return {
       content: [
@@ -1848,8 +1894,9 @@ class BluematadorMCPServer {
 
   // Mute Rules handlers
   private async handleListMuteRules(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { includeInactive } = args;
-    const muteRules = await this.apiClient.listMuteRules(this.accountId, includeInactive);
+    const muteRules = await apiClient.listMuteRules(accountId, includeInactive);
 
     if (muteRules.length === 0) {
       return {
@@ -1877,6 +1924,7 @@ class BluematadorMCPServer {
   }
 
   private async handleCreateMuteRule(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { hide, resource, projects, regions } = args;
     const data: CreateMuteRuleData = {
       hide,
@@ -1885,7 +1933,7 @@ class BluematadorMCPServer {
       regions
     };
 
-    await this.apiClient.createMuteRule(this.accountId, data);
+    await apiClient.createMuteRule(accountId, data);
 
     return {
       content: [
@@ -1898,8 +1946,9 @@ class BluematadorMCPServer {
   }
 
   private async handleGetMuteRegions(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     
-    const regions = await this.apiClient.getMuteRegions(this.accountId);
+    const regions = await apiClient.getMuteRegions(accountId);
 
     return {
       content: [
@@ -1913,6 +1962,7 @@ class BluematadorMCPServer {
 
   // Additional Notification handlers
   private async handleCreateOpsGenieNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { name, apikey, severities } = args;
     const data: OpsGenieNotificationData = {
       name,
@@ -1920,7 +1970,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await this.apiClient.createOpsGenieNotification(this.accountId, data);
+    const result = await apiClient.createOpsGenieNotification(accountId, data);
 
     return {
       content: [
@@ -1933,6 +1983,7 @@ class BluematadorMCPServer {
   }
 
   private async handleCreateSNSNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { name, topicArn, accessKeyId, secretAccessKey, sendResolve, sendJson, severities } = args;
     const data: SNSNotificationData = {
       name,
@@ -1944,7 +1995,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await this.apiClient.createSNSNotification(this.accountId, data);
+    const result = await apiClient.createSNSNotification(accountId, data);
 
     return {
       content: [
@@ -1957,6 +2008,7 @@ class BluematadorMCPServer {
   }
 
   private async handleCreateVictorOpsNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { name, integrationId, routingKey, severities } = args;
     const data: VictorOpsNotificationData = {
       name,
@@ -1965,7 +2017,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await this.apiClient.createVictorOpsNotification(this.accountId, data);
+    const result = await apiClient.createVictorOpsNotification(accountId, data);
 
     return {
       content: [
@@ -1978,6 +2030,7 @@ class BluematadorMCPServer {
   }
 
   private async handleCreateSquadCastNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { name, sourceInstance, severities } = args;
     const data: SquadCastNotificationData = {
       name,
@@ -1985,7 +2038,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await this.apiClient.createSquadCastNotification(this.accountId, data);
+    const result = await apiClient.createSquadCastNotification(accountId, data);
 
     return {
       content: [
@@ -1998,6 +2051,7 @@ class BluematadorMCPServer {
   }
 
   private async handleCreateServiceNowNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { name, instanceName, username, password, sourceInstance, severities } = args;
     const data: ServiceNowNotificationData = {
       name,
@@ -2010,7 +2064,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await this.apiClient.createServiceNowNotification(this.accountId, data);
+    const result = await apiClient.createServiceNowNotification(accountId, data);
 
     return {
       content: [
@@ -2024,13 +2078,14 @@ class BluematadorMCPServer {
 
   // Update Notification handlers
   private async handleUpdateEmailNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { outboundId, email, severities } = args;
     const data: EmailNotificationData = {
       email,
       severities: { all: severities }
     };
 
-    const result = await this.apiClient.updateEmailNotification(this.accountId, outboundId, data);
+    const result = await apiClient.updateEmailNotification(accountId, outboundId, data);
 
     return {
       content: [
@@ -2043,6 +2098,7 @@ class BluematadorMCPServer {
   }
 
   private async handleUpdatePagerDutyNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, account, serviceName, serviceSecret, severities } = args;
     const data: PagerDutyNotificationData = {
       name,
@@ -2052,7 +2108,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await this.apiClient.updatePagerDutyNotification(this.accountId, outboundId, data);
+    const result = await apiClient.updatePagerDutyNotification(accountId, outboundId, data);
 
     return {
       content: [
@@ -2065,6 +2121,7 @@ class BluematadorMCPServer {
   }
 
   private async handleUpdateOpsGenieNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, apikey, severities } = args;
     const data: OpsGenieNotificationData = {
       name,
@@ -2072,7 +2129,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await this.apiClient.updateOpsGenieNotification(this.accountId, outboundId, data);
+    const result = await apiClient.updateOpsGenieNotification(accountId, outboundId, data);
 
     return {
       content: [
@@ -2085,6 +2142,7 @@ class BluematadorMCPServer {
   }
 
   private async handleUpdateSNSNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, topicArn, accessKeyId, secretAccessKey, sendResolve, sendJson, severities } = args;
     const data: SNSNotificationData = {
       name,
@@ -2096,7 +2154,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await this.apiClient.updateSNSNotification(this.accountId, outboundId, data);
+    const result = await apiClient.updateSNSNotification(accountId, outboundId, data);
 
     return {
       content: [
@@ -2109,6 +2167,7 @@ class BluematadorMCPServer {
   }
 
   private async handleUpdateVictorOpsNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, integrationId, routingKey, severities } = args;
     const data: VictorOpsNotificationData = {
       name,
@@ -2117,7 +2176,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await this.apiClient.updateVictorOpsNotification(this.accountId, outboundId, data);
+    const result = await apiClient.updateVictorOpsNotification(accountId, outboundId, data);
 
     return {
       content: [
@@ -2130,6 +2189,7 @@ class BluematadorMCPServer {
   }
 
   private async handleUpdateSquadCastNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, sourceInstance, severities } = args;
     const data: SquadCastNotificationData = {
       name,
@@ -2137,7 +2197,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await this.apiClient.updateSquadCastNotification(this.accountId, outboundId, data);
+    const result = await apiClient.updateSquadCastNotification(accountId, outboundId, data);
 
     return {
       content: [
@@ -2150,6 +2210,7 @@ class BluematadorMCPServer {
   }
 
   private async handleUpdateServiceNowNotification(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, instanceName, username, password, sourceInstance, severities } = args;
     const data: ServiceNowNotificationData = {
       name,
@@ -2162,7 +2223,7 @@ class BluematadorMCPServer {
       severities: { all: severities }
     };
 
-    const result = await this.apiClient.updateServiceNowNotification(this.accountId, outboundId, data);
+    const result = await apiClient.updateServiceNowNotification(accountId, outboundId, data);
 
     return {
       content: [
@@ -2176,9 +2237,10 @@ class BluematadorMCPServer {
 
   // Metrics handler
   private async handleGetMetrics(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { metrics, agg, start, end, groups } = args;
     const query: MetricsQuery = {
-      accountId: this.accountId,
+      accountId: accountId,
       metrics,
       agg,
       start,
@@ -2186,7 +2248,7 @@ class BluematadorMCPServer {
       groups
     };
 
-    const result = await this.apiClient.getMetrics(query);
+    const result = await apiClient.getMetrics(query);
 
     return {
       content: [
@@ -2200,8 +2262,9 @@ class BluematadorMCPServer {
 
   // Advanced Mute Rule handlers
   private async handleGetMuteMonitors(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     
-    const result = await this.apiClient.getMuteMonitors(this.accountId);
+    const result = await apiClient.getMuteMonitors(accountId);
 
     const monitorsList = Object.entries(result.monitors)
       .map(([service, monitors]) => `**${service}:**\n  ${monitors.join(', ')}`)
@@ -2218,8 +2281,9 @@ class BluematadorMCPServer {
   }
 
   private async handleGetMuteResources(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { page, pageSize } = args;
-    const result = await this.apiClient.getMuteResources(this.accountId, page, pageSize);
+    const result = await apiClient.getMuteResources(accountId, page, pageSize);
 
     if (result.resources.length === 0) {
       return {
@@ -2247,8 +2311,9 @@ class BluematadorMCPServer {
   }
 
   private async handleDeleteMuteRule(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { muteId } = args;
-    await this.apiClient.deleteMuteRule(this.accountId, muteId);
+    await apiClient.deleteMuteRule(accountId, muteId);
 
     return {
       content: [
@@ -2261,10 +2326,11 @@ class BluematadorMCPServer {
   }
 
   private async handleMuteMonitorsByService(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { serviceName, monitorNames, hide = false, projects, regions } = args;
 
     // First, get available monitors to validate the service name and get monitor names
-    const availableMonitorsResponse = await this.apiClient.getMuteMonitors(this.accountId);
+    const availableMonitorsResponse = await apiClient.getMuteMonitors(accountId);
     const availableMonitors = availableMonitorsResponse.monitors;
 
     // Find the service in the available monitors (case-insensitive)
@@ -2309,7 +2375,7 @@ class BluematadorMCPServer {
       regions
     };
 
-    await this.apiClient.createMuteRule(this.accountId, muteRuleData);
+    await apiClient.createMuteRule(accountId, muteRuleData);
 
     return {
       content: [
@@ -2329,10 +2395,11 @@ class BluematadorMCPServer {
   }
 
   private async handleMuteResourcesByWildcard(args: any) {
+    const { apiClient, accountId } = this.getApiClient();
     const { resourcePattern, serviceType, hide = false, projects, regions } = args;
 
     // Get available resources to find matches
-    const resourcesResponse = await this.apiClient.getMuteResources(this.accountId);
+    const resourcesResponse = await apiClient.getMuteResources(accountId);
     const allResources = resourcesResponse.resources;
 
     if (!allResources || allResources.length === 0) {
@@ -2392,7 +2459,7 @@ class BluematadorMCPServer {
         };
 
         try {
-          await this.apiClient.createMuteRule(this.accountId, muteRuleData);
+          await apiClient.createMuteRule(accountId, muteRuleData);
           muteResults.push(`✅ ${resource.arn}`);
         } catch (error: any) {
           muteResults.push(`❌ ${resource.arn} (Error: ${error.message})`);

@@ -1,27 +1,41 @@
-# Bluematador for Claude Desktop
+# Bluematador MCP Server
 
-Connect your Bluematador monitoring to Claude Desktop **securely** with your credentials stored locally.
+[![npm version](https://badge.fury.io/js/blue-matador-mcp-server.svg)](https://www.npmjs.com/package/blue-matador-mcp-server)
+
+Connect your Bluematador monitoring to Claude Desktop and Claude Code **securely** with your credentials stored locally.
 
 ---
 
 ## 🚀 Quick Start
 
-Connect to the Bluematador MCP server with your credentials stored locally in your Claude configuration:
+### Requirements
+
+- **Node.js**: 16.x or higher
+
+### Installation
+
+Install the Bluematador MCP server as an npm package:
+
+```bash
+npm install -g blue-matador-mcp-server
+```
+
+📦 [View on npm](https://www.npmjs.com/package/blue-matador-mcp-server)
+
+### Configuration
 
 1. Get your **API Key** and **Account ID** from [Bluematador Settings → API Keys](https://app.bluematador.com/ur/app#/account/apikeys)
 
-2. Get your organization's **Bluematador MCP Server URL** from your admin
+2. Open **Claude Desktop** → **Settings** → **Developer** → **Edit Config**
 
-3. Open **Claude Desktop** → **Settings** → **Developer** → **Edit Config**
-
-4. Add the Bluematador MCP server to your configuration:
+3. Add the Bluematador MCP server to your configuration:
 
 ```json
 {
   "mcpServers": {
     "bluematador": {
-      "url": "https://bluematador-mcp.your-company.com/mcp",
-      "headers": {
+      "command": "bluematador-mcp-server",
+      "env": {
         "BLUEMATADOR_API_KEY": "your-api-key-here",
         "BLUEMATADOR_ACCOUNT_ID": "your-account-id-here"
       }
@@ -30,7 +44,7 @@ Connect to the Bluematador MCP server with your credentials stored locally in yo
 }
 ```
 
-5. Save the file and restart Claude Desktop
+4. Save the file and restart Claude Desktop
 
 ---
 
@@ -110,78 +124,9 @@ You: "What EC2 instances have high CPU?"
 
 ---
 
-## 🛠️ Development
+## 🛠️ For Developers
 
-### Project Structure
-
-```
-bluematador-mcp-server/
-├── src/
-│   ├── index.ts              # Entry point
-│   ├── index-stdio.ts        # Core MCP server implementation
-│   ├── server-http.ts        # HTTP server
-│   ├── api-client.ts         # Bluematador API client
-│   └── types.ts              # TypeScript types
-├── docs/
-│   └── API-REFERENCE.md      # API reference
-└── dist/                     # Built files
-```
-
-### Local Development
-
-Run the HTTP server locally:
-
-```bash
-npm install
-npm run build
-npm run start:http
-```
-
-Configure Claude Desktop:
-
-```json
-{
-  "mcpServers": {
-    "bluematador": {
-      "url": "http://localhost:3000/mcp",
-      "headers": {
-        "BLUEMATADOR_API_KEY": "your-api-key-here",
-        "BLUEMATADOR_ACCOUNT_ID": "your-account-id-here"
-      }
-    }
-  }
-}
-```
-
----
-
-## 🌐 Transport Protocols
-
-This server uses the **Streamable HTTP** transport as specified in the MCP protocol (2025-03-26 revision).
-
-- **Protocol Version**: 2024-11-05
-- **Transport**: Streamable HTTP
-- **Endpoint**: `/mcp`
-- **Health Check**: `/health`
-
----
-
-## 📦 Requirements
-
-- **Node.js**: 18.x or higher
-- **Claude Desktop**: Latest version
-- **Bluematador Account**: With API access
-
----
-
-## 🤝 Contributing
-
-Contributions welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+If you want to contribute or run the server locally for development, see [DEV-README.md](./DEV-README.md)
 
 ---
 
