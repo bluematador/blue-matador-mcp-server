@@ -1,7 +1,7 @@
 {
   "name": "blue-matador-mcp-server",
-  "version": "1.0.8",
-  "description": "Connect Bluematador monitoring to Claude Desktop via MCP server",
+  "version": "1.0.9",
+  "description": "Connect Bluematador monitoring to Claude Desktop and Claude Code via MCP server",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -18,11 +18,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
-    "dev:http": "tsx src/server-http.ts",
     "start": "node dist/index.js",
-    "start:http": "node dist/server-http.js",
-    "start:dev": "./dev/scripts/start-dev.sh",
-    "watch:dev": "./dev/scripts/watch-dev.sh",
     "test": "node test/integration/test-mute-monitors.js",
     "test:integration": "node test/integration/test-mute-monitors.js",
     "test:mcp-direct": "node test/integration/test_mcp_direct.js",
@@ -41,6 +37,7 @@
     "aws",
     "azure",
     "claude-desktop",
+    "claude-code",
     "alerting",
     "infrastructure"
   ],
@@ -52,17 +49,16 @@
     "docs/",
     "examples/",
     "icon.svg",
-    "README.md"
+    "README.md",
+    "DEV-README.md"
   ],
   "author": "Bluematador",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.0",
-    "axios": "^1.6.0",
-    "express": "^5.0.1"
+    "axios": "^1.6.0"
   },
   "devDependencies": {
-    "@types/express": "^5.0.0",
     "@types/node": "^20.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"
