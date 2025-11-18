@@ -277,12 +277,20 @@ export interface MonitorsMuteRuleMap {
   [serviceName: string]: string[];
 }
 
+export interface MuteRuleSchedule {
+  start: string;
+  end: string;
+  timezone: string;
+  repeatIntervalDays?: number;
+}
+
 export interface CreateMuteRuleData {
   hide: boolean;
   resource?: ResourceRef;
   projects?: string[];
   regions?: string[];
   monitors?: MonitorsMuteRuleMap;
+  schedule?: MuteRuleSchedule;
 }
 
 export interface MuteRule {
@@ -292,6 +300,7 @@ export interface MuteRule {
   projects?: string[];
   regions?: string[];
   monitors?: MonitorsMuteRuleMap;
+  schedule?: MuteRuleSchedule;
   active: boolean;
 }
 
