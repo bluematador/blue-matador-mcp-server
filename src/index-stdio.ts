@@ -1150,8 +1150,10 @@ class BluematadorMCPServer {
               type: 'object',
               properties: {
                 metrics: {
-                  type: 'string',
-                  description: 'Metric name to query (e.g., "aws.ec2.cpuutilization")'
+                  type: 'array',
+                  items: { type: 'string' },
+                  minItems: 1,
+                  description: 'Metric names to query (e.g., ["aws.ec2.cpu_utilization.percent"])'
                 },
                 agg: {
                   type: 'string',
@@ -1166,8 +1168,9 @@ class BluematadorMCPServer {
                   description: 'End time in ISO 8601 format'
                 },
                 groups: {
-                  type: 'string',
-                  description: 'Grouping dimensions (optional)'
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Label dimensions to split the series by. Labels differ per metric (e.g., ["instance_id"] for aws.ec2.cpu_utilization.percent). An unknown label returns no series. Optional.'
                 }
               },
               required: ['metrics', 'agg', 'start', 'end']
@@ -2328,7 +2331,9 @@ class BluematadorMCPServer {
   // Metrics handler
   private async handleGetMetrics(args: any) {
     const { apiClient, accountId } = this.getApiClient();
-    const { metrics, agg, start, end, groups } = args;
+    const { agg, start, end } = args;
+    const metrics: string[] = [args.metrics].flat();
+    const groups: string[] = args.groups === undefined ? [] : [args.groups].flat();
     const query: MetricsQuery = {
       accountId: accountId,
       metrics,
@@ -2339,12 +2344,17 @@ class BluematadorMCPServer {
     };
 
     const result = await apiClient.getMetrics(query);
+    const withData = new Set(result.filter((graph) => graph.series.length > 0).map((graph) => graph.metric));
+    const missing = metrics.filter((metric) => !withData.has(metric));
+    const missingNote = missing.length > 0
+      ? `\n\nNo data returned for: ${missing.join(', ')}. The metric name or a group label may be wrong, or the metric had no data in this range.`
+      : '';
 
     return {
       content: [
         {
           type: 'text',
-          text: `Metrics query results:\n\n**Query:** ${metrics} (${agg})\n**Time Range:** ${start} to ${end}\n**Groups:** ${groups || 'None'}\n\n**Results:**\n${JSON.stringify(result, null, 2)}`
+          text: `Metrics query results:\n\n**Query:** ${metrics.join(', ')} (${agg})\n**Time Range:** ${start} to ${end}\n**Groups:** ${groups.length > 0 ? groups.join(', ') : 'None'}\n\n**Results:**\n${JSON.stringify(result, null, 2)}${missingNote}`
         }
       ]
     };
