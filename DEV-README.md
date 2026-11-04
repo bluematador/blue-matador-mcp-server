@@ -81,7 +81,7 @@ npm run test:mcp-tools
 
 This server uses the **stdio** transport as specified in the MCP protocol.
 
-- **Protocol Version**: 2024-11-05
+- **Protocol Version**: 2026-07-28. Clients on 2025-11-25, 2025-06-18, 2025-03-26, and 2024-11-05 still connect through the older handshake.
 - **Transport**: stdio (Standard Input/Output)
 
 ---

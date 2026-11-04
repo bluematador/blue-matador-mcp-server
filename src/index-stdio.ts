@@ -2,7 +2,7 @@
 
 import { Server, ProtocolError, ProtocolErrorCode } from '@modelcontextprotocol/server';
 import type { CallToolResult, ListToolsResult } from '@modelcontextprotocol/server';
-import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
 
 import { BluematadorApiClient } from './api-client.js';
 import {
@@ -2609,7 +2609,7 @@ class BluematadorMCPServer {
   }
 
   async run(): Promise<void> {
-    await this.server.connect(new StdioServerTransport());
+    serveStdio(() => this.server);
     console.error('Bluematador MCP server running on stdio');
   }
 
