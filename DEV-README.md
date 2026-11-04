@@ -89,7 +89,7 @@ This server uses the **stdio** transport as specified in the MCP protocol.
 
 ## 📦 Requirements
 
-- **Node.js**: 16.x or higher
+- **Node.js**: 18.x or higher
 - **TypeScript**: 5.x
 - **Bluematador Account**: With API access for testing
 
