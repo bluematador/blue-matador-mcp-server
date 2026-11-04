@@ -107,3 +107,55 @@ test('tool calls report missing credentials instead of calling the API', async (
 
   assert.match(result.content[0].text, /Missing Bluematador credentials: BLUEMATADOR_API_KEY, BLUEMATADOR_ACCOUNT_ID/);
 });
+
+test('get_metrics queries metrics v2 with repeated parameters and names metrics without series', async (t) => {
+  const api = await startApiStub({
+    [`GET /me/api/accounts/${ACCOUNT_ID}/metrics/v2`]: [
+      {
+        metric: 'aws.sqs.average_message_size.bytes',
+        numerator: { unit: 'byte', unitShort: 'B' },
+        denominator: { unit: '', unitShort: '' },
+        groupedBy: ['arn', 'region'],
+        series: [
+          {
+            group: { arn: 'arn:aws:sqs:us-east-1:123456789012:orders-queue', region: 'us-east-1' },
+            points: [['2026-11-01T05:00:00Z', 184.73], ['2026-11-01T05:05:00Z', 184.72]],
+          },
+        ],
+      },
+      {
+        metric: 'aws.sqs.number_of_messages_sent.count',
+        numerator: { unit: 'count', unitShort: '' },
+        denominator: { unit: '', unitShort: '' },
+        groupedBy: ['arn', 'region'],
+        series: [],
+      },
+    ],
+  });
+  t.after(api.close);
+
+  const client = await connectClient(t, new BluematadorMCPServer(API_KEY, ACCOUNT_ID, api.baseUrl));
+  const result = await client.callTool({
+    name: 'get_metrics',
+    arguments: {
+      metrics: ['aws.sqs.average_message_size.bytes', 'aws.sqs.number_of_messages_sent.count', 'aws.sqs.not_a_metric'],
+      agg: 'avg',
+      start: '2026-11-01T05:00:00.000Z',
+      end: '2026-11-01T06:00:00.000Z',
+      groups: ['arn', 'region'],
+    },
+  });
+  const { url } = api.requests[0];
+  const text = result.content[0].text;
+
+  assert.equal(url.pathname, `/me/api/accounts/${ACCOUNT_ID}/metrics/v2`);
+  assert.deepEqual(url.searchParams.getAll('metrics'), [
+    'aws.sqs.average_message_size.bytes',
+    'aws.sqs.number_of_messages_sent.count',
+    'aws.sqs.not_a_metric',
+  ]);
+  assert.deepEqual(url.searchParams.getAll('groups'), ['arn', 'region']);
+  assert.equal(url.searchParams.get('agg'), 'avg');
+  assert.match(text, /184\.72/);
+  assert.match(text, /No data returned for: aws\.sqs\.number_of_messages_sent\.count, aws\.sqs\.not_a_metric\./);
+});
