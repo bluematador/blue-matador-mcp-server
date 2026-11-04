@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { fileURLToPath } from 'node:url';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { BluematadorMCPServer } from '../../dist/index-stdio.js';
 
 const API_KEY = 'test-api-key';
@@ -157,4 +159,27 @@ test('get_metrics queries metrics v2 with repeated parameters and names metrics 
   assert.equal(url.searchParams.get('agg'), 'avg');
   assert.match(text, /184\.72/);
   assert.match(text, /No data returned for: aws\.sqs\.number_of_messages_sent\.count, aws\.sqs\.not_a_metric\./);
+});
+
+test('serves protocol 2026-07-28 over stdio and still accepts the 2025 handshake', async (t) => {
+  const api = await startApiStub({ [`GET /zi/api/accounts/${ACCOUNT_ID}/projects`]: [] });
+  t.after(api.close);
+
+  for (const [mode, expectedVersion] of [[{ pin: '2026-07-28' }, '2026-07-28'], ['legacy', '2025-11-25']]) {
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [fileURLToPath(new URL('../../dist/index.js', import.meta.url))],
+      env: { BLUEMATADOR_API_KEY: API_KEY, BLUEMATADOR_ACCOUNT_ID: ACCOUNT_ID, BLUEMATADOR_BASE_URL: api.baseUrl },
+      stderr: 'ignore',
+    });
+    const client = new Client({ name: 'test-client', version: '0.0.0' }, { versionNegotiation: { mode } });
+    t.after(() => transport.close());
+    await client.connect(transport);
+
+    const { tools } = await client.listTools();
+    assert.ok(tools.some((tool) => tool.name === 'list_projects'));
+    await client.callTool({ name: 'list_projects', arguments: {} });
+    assert.equal(api.requests.at(-1).url.pathname, `/zi/api/accounts/${ACCOUNT_ID}/projects`);
+    assert.equal(client.getNegotiatedProtocolVersion(), expectedVersion);
+  }
 });
