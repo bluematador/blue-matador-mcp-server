@@ -10,7 +10,7 @@ Connect your Bluematador monitoring to Claude Desktop and Claude Code **securely
 
 ### Requirements
 
-- **Node.js**: 18.x or higher
+- **Node.js**: 20.x or higher
 
 ### Installation
 
