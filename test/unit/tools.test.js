@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
@@ -182,4 +184,43 @@ test('serves protocol 2026-07-28 over stdio and still accepts the 2025 handshake
     assert.equal(api.requests.at(-1).url.pathname, `/zi/api/accounts/${ACCOUNT_ID}/projects`);
     assert.equal(client.getNegotiatedProtocolVersion(), expectedVersion);
   }
+});
+
+test('accepts the 2025 handshake after a 2026-07-28 discover probe', async (t) => {
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../../dist/index.js', import.meta.url))], {
+    env: { ...process.env, BLUEMATADOR_API_KEY: API_KEY, BLUEMATADOR_ACCOUNT_ID: ACCOUNT_ID },
+    stdio: ['pipe', 'pipe', 'ignore'],
+  });
+  t.after(() => child.kill());
+  const replies = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
+  const request = async (message) => {
+    child.stdin.write(`${JSON.stringify(message)}\n`);
+    return JSON.parse((await replies.next()).value);
+  };
+
+  const discover = await request({
+    jsonrpc: '2.0',
+    id: 'probe',
+    method: 'server/discover',
+    params: {
+      _meta: {
+        'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+        'io.modelcontextprotocol/clientInfo': { name: 'test-client', version: '0.0.0' },
+        'io.modelcontextprotocol/clientCapabilities': {},
+      },
+    },
+  });
+  const initialize = await request({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'test-client', version: '0.0.0' } },
+  });
+  child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
+  const list = await request({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
+
+  assert.deepEqual(discover.result.supportedVersions, ['2026-07-28']);
+  assert.equal(initialize.error, undefined);
+  assert.equal(initialize.result.protocolVersion, '2025-11-25');
+  assert.ok(list.result.tools.some((tool) => tool.name === 'list_projects'));
 });
