@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createInterface } from 'node:readline';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { BluematadorMCPServer } from '../../dist/index-stdio.js';
+import { renderToolReference } from '../../scripts/generate-tool-reference.mjs';
 
 const API_KEY = 'test-api-key';
 const ACCOUNT_ID = '00000000-0000-0000-0000-000000000001';
@@ -71,6 +73,14 @@ test('annotates every tool with hints that match its verb', async (t) => {
   for (const [name, annotations] of Object.entries(hints)) {
     if (!/^(get|list)_/.test(name)) assert.equal(annotations.readOnlyHint, false, `${name} writes`);
   }
+});
+
+test('docs/API-REFERENCE.md matches the tools the server lists', async (t) => {
+  const client = await connectClient(t, new BluematadorMCPServer(API_KEY, ACCOUNT_ID, 'http://127.0.0.1:1'));
+  const { tools } = await client.listTools();
+  const committed = readFileSync(new URL('../../docs/API-REFERENCE.md', import.meta.url), 'utf8');
+
+  assert.equal(committed, renderToolReference(tools), 'run npm run docs and commit the result');
 });
 
 test('get_active_events calls the API with the account key and renders each event', async (t) => {
