@@ -213,8 +213,106 @@ test('get_metrics queries metrics v2 with repeated parameters and names metrics 
   ]);
   assert.deepEqual(url.searchParams.getAll('groups'), ['arn', 'region']);
   assert.equal(url.searchParams.get('agg'), 'avg');
-  assert.match(text, /184\.72/);
+  assert.match(text, /aws\.sqs\.average_message_size\.bytes \(B, avg\): 1 series/);
+  assert.match(text, /arn=arn:aws:sqs:us-east-1:123456789012:orders-queue, region=us-east-1: last 184\.72, min 184\.72, max 184\.73 at 2026-11-01T05:00:00Z, avg 184\.72 \(2 points\)/);
+  assert.doesNotMatch(text, /"points"/);
   assert.match(text, /No data returned for: aws\.sqs\.number_of_messages_sent\.count, aws\.sqs\.not_a_metric\./);
+});
+
+test('get_metrics returns raw points only when include_points is set', async (t) => {
+  const api = await startApiStub({
+    [`GET /me/api/accounts/${ACCOUNT_ID}/metrics/v2`]: [
+      {
+        metric: 'aws.ec2.cpu_utilization.percent',
+        numerator: { unit: 'percent', unitShort: '%' },
+        denominator: { unit: '', unitShort: '' },
+        groupedBy: ['instance_id'],
+        series: [
+          { group: { instance_id: 'i-quiet' }, points: [['2026-11-01T05:00:00Z', 1], ['2026-11-01T05:05:00Z', 3]] },
+          { group: { instance_id: 'i-busy' }, points: [['2026-11-01T05:00:00Z', 90], ['2026-11-01T05:05:00Z', 40]] },
+        ],
+      },
+    ],
+  });
+  t.after(api.close);
+
+  const client = await connectClient(t, new BluematadorMCPServer(API_KEY, ACCOUNT_ID, api.baseUrl));
+  const args = { metrics: ['aws.ec2.cpu_utilization.percent'], agg: 'max', start: '2026-11-01T05:00:00Z', end: '2026-11-01T06:00:00Z', groups: ['instance_id'] };
+  const compact = (await client.callTool({ name: 'get_metrics', arguments: args })).content[0].text;
+  const full = (await client.callTool({ name: 'get_metrics', arguments: { ...args, include_points: true } })).content[0].text;
+
+  assert.ok(compact.indexOf('i-busy') < compact.indexOf('i-quiet'), 'highest max first');
+  assert.match(compact, /instance_id=i-busy: last 40, min 40, max 90 at 2026-11-01T05:00:00Z, avg 65 \(2 points\)/);
+  assert.doesNotMatch(compact, /"points"/);
+  assert.match(full, /"points"/);
+});
+
+test('get_metrics skips null points and keeps small values readable', async (t) => {
+  const api = await startApiStub({
+    [`GET /me/api/accounts/${ACCOUNT_ID}/metrics/v2`]: [
+      {
+        metric: 'aws.sqs.errors.rate',
+        numerator: { unit: 'count', unitShort: '' },
+        denominator: { unit: 'second', unitShort: 's' },
+        groupedBy: [],
+        series: [{ points: [['2026-11-01T05:00:00Z', null], ['2026-11-01T05:05:00Z', 0.004], ['2026-11-01T05:10:00Z', 0.002]] }],
+      },
+    ],
+  });
+  t.after(api.close);
+
+  const client = await connectClient(t, new BluematadorMCPServer(API_KEY, ACCOUNT_ID, api.baseUrl));
+  const text = (await client.callTool({
+    name: 'get_metrics',
+    arguments: { metrics: ['aws.sqs.errors.rate'], agg: 'avg', start: '2026-11-01T05:00:00Z', end: '2026-11-01T06:00:00Z' },
+  })).content[0].text;
+
+  assert.match(text, /aws\.sqs\.errors\.rate \(count\/s, avg\): 1 series/);
+  assert.match(text, /- all: last 0\.002, min 0\.002, max 0\.004 at 2026-11-01T05:05:00Z, avg 0\.003 \(2 points\)/);
+});
+
+test('get_metrics treats null-only series as no data and caps long lists', async (t) => {
+  const series = Array.from({ length: 30 }, (_, i) => ({ group: { instance_id: `i-${String(i).padStart(2, '0')}` }, points: [['2026-11-01T05:00:00Z', i]] }));
+  const unit = { numerator: { unit: 'percent', unitShort: '%' }, denominator: { unit: '', unitShort: '' } };
+  const api = await startApiStub({
+    [`GET /me/api/accounts/${ACCOUNT_ID}/metrics/v2`]: [
+      { metric: 'aws.ec2.cpu_utilization.percent', ...unit, groupedBy: ['instance_id'], series },
+      { metric: 'aws.ec2.status_check_failed.count', ...unit, groupedBy: ['instance_id'], series: [{ group: { instance_id: 'i-x' }, points: [['2026-11-01T05:00:00Z', null]] }] },
+    ],
+  });
+  t.after(api.close);
+
+  const client = await connectClient(t, new BluematadorMCPServer(API_KEY, ACCOUNT_ID, api.baseUrl));
+  const text = (await client.callTool({
+    name: 'get_metrics',
+    arguments: { metrics: ['aws.ec2.cpu_utilization.percent', 'aws.ec2.status_check_failed.count'], agg: 'avg', start: '2026-11-01T05:00:00Z', end: '2026-11-01T06:00:00Z', groups: ['instance_id'] },
+  })).content[0].text;
+
+  assert.match(text, /30 series, highest max first/);
+  assert.match(text, /instance_id=i-29: last 29/);
+  assert.doesNotMatch(text, /instance_id=i-04:/);
+  assert.match(text, /5 more series not shown/);
+  assert.match(text, /No data returned for: aws\.ec2\.status_check_failed\.count\./);
+});
+
+test('get_active_events_summary lists totals and only the days with events', async (t) => {
+  const zeroDays = Object.fromEntries(Array.from({ length: 28 }, (_, i) => [`2026-10-${String(i + 1).padStart(2, '0')}T00:00:00Z`, 0]));
+  const counts = {
+    alert: { ...zeroDays },
+    warning: { ...zeroDays, '2026-10-19T00:00:00Z': 1, '2026-10-27T00:00:00Z': 2 },
+    anomaly: { ...zeroDays, '2026-10-19T00:00:00Z': 48 },
+  };
+  const api = await startApiStub({ [`GET /ma/api/accounts/${ACCOUNT_ID}/counts`]: { opened: counts, active: counts } });
+  t.after(api.close);
+
+  const client = await connectClient(t, new BluematadorMCPServer(API_KEY, ACCOUNT_ID, api.baseUrl));
+  const text = (await client.callTool({ name: 'get_active_events_summary', arguments: {} })).content[0].text;
+
+  assert.match(text, /Opened: alert 0, warning 3, anomaly 48/);
+  assert.match(text, /warning: 2026-10-19 1, 2026-10-27 2/);
+  assert.match(text, /anomaly: 2026-10-19 48/);
+  assert.doesNotMatch(text, /2026-10-01/);
+  assert.ok(text.split('\n').length < 15, 'stays short');
 });
 
 test('serves protocol 2026-07-28 over stdio and still accepts the 2025 handshake', async (t) => {
