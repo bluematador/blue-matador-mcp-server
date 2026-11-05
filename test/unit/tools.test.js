@@ -133,7 +133,36 @@ test('tool calls report missing credentials instead of calling the API', async (
   const client = await connectClient(t, new BluematadorMCPServer());
   const result = await client.callTool({ name: 'get_active_events', arguments: {} });
 
+  assert.equal(result.isError, true);
   assert.match(result.content[0].text, /Missing Bluematador credentials: BLUEMATADOR_API_KEY, BLUEMATADOR_ACCOUNT_ID/);
+});
+
+test('API failures come back as tool results the model can read', async (t) => {
+  const api = await startApiStub({});
+  t.after(api.close);
+
+  const client = await connectClient(t, new BluematadorMCPServer(API_KEY, ACCOUNT_ID, api.baseUrl));
+  const result = await client.callTool({ name: 'list_projects', arguments: {} });
+
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /Resource not found/);
+  assert.match(result.content[0].text, /HTTP Status:\*\* 404/);
+});
+
+test('parameter errors from a tool come back as tool results too', async (t) => {
+  const api = await startApiStub({ [`GET /ma/accounts/${ACCOUNT_ID}/mutes/options/monitors`]: { monitors: { SQS: ['queue.depth.high'] } } });
+  t.after(api.close);
+
+  const client = await connectClient(t, new BluematadorMCPServer(API_KEY, ACCOUNT_ID, api.baseUrl));
+  const result = await client.callTool({ name: 'mute_monitors_by_service', arguments: { serviceName: 'kafka' } });
+
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /Service "kafka" not found\. Available services: SQS/);
+});
+
+test('unknown tools are still protocol errors', async (t) => {
+  const client = await connectClient(t, new BluematadorMCPServer(API_KEY, ACCOUNT_ID, 'http://127.0.0.1:1'));
+  await assert.rejects(client.callTool({ name: 'no_such_tool', arguments: {} }), /Unknown tool: no_such_tool/);
 });
 
 test('get_metrics queries metrics v2 with repeated parameters and names metrics without series', async (t) => {
