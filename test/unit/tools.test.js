@@ -315,6 +315,128 @@ test('get_active_events_summary lists totals and only the days with events', asy
   assert.ok(text.split('\n').length < 15, 'stays short');
 });
 
+test('get_event_context returns the event, its resource, related events, and mute rules', async (t) => {
+  const arn = 'arn:aws:rds:us-east-1:123456789012:db:volt-prd-0';
+  const event = (id, opened, extra = {}) => ({
+    id,
+    accountId: ACCOUNT_ID,
+    opened,
+    eventType: 'rds_cpu',
+    typeText: 'High RDS CPU',
+    summaryText: `CPU high on volt-prd-0 (${id})`,
+    detailTexts: ['CPU utilization above 90% for 15 minutes'],
+    severity: 'warning',
+    source: { label: 'volt-prd-0', text: 'volt-prd-0', tags: [{ key: 'env', value: 'prd' }], ref: { arn, refType: 'aws_arn' } },
+    links: [{ linkType: 'console', text: 'AWS console', url: 'https://console.aws.amazon.com/rds', created: opened }],
+    projects: [],
+    muted: false,
+    hidden: false,
+    ...extra,
+  });
+  const api = await startApiStub({
+    [`GET /ma/api/accounts/${ACCOUNT_ID}/events/active`]: [event('event-now', '2026-11-04T05:00:00Z')],
+    [`GET /ma/api/accounts/${ACCOUNT_ID}/events`]: [
+      event('event-now', '2026-11-04T05:00:00Z'),
+      event('event-earlier', '2026-11-02T05:00:00Z', { closed: '2026-11-02T06:00:00Z' }),
+      event('event-other', '2026-11-03T05:00:00Z', { source: { label: 'other', text: 'other', tags: [], ref: { arn: 'arn:aws:rds:other', refType: 'aws_arn' } } }),
+    ],
+    [`GET /ma/api/accounts/${ACCOUNT_ID}/mutes`]: [
+      { id: 'mute-match', hide: false, active: true, resource: { arn, refType: 'aws_arn' } },
+      { id: 'mute-other', hide: false, active: true, resource: { arn: 'arn:aws:rds:other', refType: 'aws_arn' } },
+    ],
+  });
+  t.after(api.close);
+
+  const client = await connectClient(t, new BluematadorMCPServer(API_KEY, ACCOUNT_ID, api.baseUrl));
+  const result = await client.callTool({ name: 'get_event_context', arguments: { event_id: 'event-now', days: 3 } });
+  const text = result.content[0].text;
+  const opened = api.requests.find((request) => request.url.pathname.endsWith('/events'));
+
+  assert.notEqual(result.isError, true);
+  assert.match(text, /High RDS CPU \(warning\)/);
+  assert.match(text, new RegExp(`ARN: ${arn}`));
+  assert.match(text, /Tags: env=prd/);
+  assert.match(text, /CPU utilization above 90% for 15 minutes/);
+  assert.match(text, /1 other event on this resource in the last 3 days/);
+  assert.match(text, /By type: High RDS CPU 1/);
+  assert.match(text, /event-earlier/);
+  assert.doesNotMatch(text, /event-other/);
+  assert.match(text, /mute-match/);
+  assert.doesNotMatch(text, /mute-other/);
+  assert.ok(opened.url.searchParams.get('start'), 'queries opened events with a start time');
+});
+
+test('get_event_context reports an unknown event as a tool error', async (t) => {
+  const api = await startApiStub({
+    [`GET /ma/api/accounts/${ACCOUNT_ID}/events/active`]: [],
+    [`GET /ma/api/accounts/${ACCOUNT_ID}/events`]: [],
+    [`GET /ma/api/accounts/${ACCOUNT_ID}/mutes`]: [],
+  });
+  t.after(api.close);
+
+  const client = await connectClient(t, new BluematadorMCPServer(API_KEY, ACCOUNT_ID, api.baseUrl));
+  const result = await client.callTool({ name: 'get_event_context', arguments: { event_id: 'missing' } });
+
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /No event with ID missing was active or opened in the last 7 days/);
+});
+
+test('get_event_context handles events without a resource and rejects bad days', async (t) => {
+  const bare = { id: 'event-bare', accountId: ACCOUNT_ID, opened: '2026-11-04T05:00:00Z', eventType: 'x', typeText: 'Odd event', summaryText: 'no source', detailTexts: [], severity: 'anomaly', links: [], projects: [], muted: true, hidden: false };
+  const api = await startApiStub({
+    [`GET /ma/api/accounts/${ACCOUNT_ID}/events/active`]: [bare],
+    [`GET /ma/api/accounts/${ACCOUNT_ID}/events`]: [bare],
+    [`GET /ma/api/accounts/${ACCOUNT_ID}/mutes`]: [{ id: 'mute-project', hide: false, active: true, projects: ['p1'] }],
+  });
+  t.after(api.close);
+
+  const client = await connectClient(t, new BluematadorMCPServer(API_KEY, ACCOUNT_ID, api.baseUrl));
+  const result = await client.callTool({ name: 'get_event_context', arguments: { event_id: 'event-bare' } });
+  const text = result.content[0].text;
+
+  assert.notEqual(result.isError, true);
+  assert.match(text, /ARN: none/);
+  assert.match(text, /Related events were not checked: the event has no resource ARN/);
+  assert.match(text, /Mute rules were not checked: the event has no resource ARN/);
+  assert.match(text, /Muted by Bluematador: yes/);
+  const missingId = await client.callTool({ name: 'get_event_context', arguments: {} });
+  assert.equal(missingId.isError, true);
+  assert.match(missingId.content[0].text, /event_id is required/);
+
+  for (const days of [0, -1, 1.5, 1e10, 'abc']) {
+    const bad = await client.callTool({ name: 'get_event_context', arguments: { event_id: 'event-bare', days } });
+    assert.equal(bad.isError, true, `days=${days}`);
+    assert.match(bad.content[0].text, /days must be a whole number from 1 to 90/);
+  }
+});
+
+test('get_event_context keeps the event when the mute lookup fails and shows monitor scope', async (t) => {
+  const arn = 'arn:aws:rds:us-east-1:123456789012:db:volt-prd-0';
+  const event = { id: 'event-1', accountId: ACCOUNT_ID, opened: '2026-11-04T05:00:00Z', eventType: 'rds_cpu', typeText: 'High RDS CPU', summaryText: 'CPU high', severity: 'warning', source: { label: 'volt-prd-0', text: 'volt-prd-0', tags: [], ref: { arn, refType: 'aws_arn' } }, muted: false, hidden: false };
+  const failingMutes = await startApiStub({
+    [`GET /ma/api/accounts/${ACCOUNT_ID}/events/active`]: [event],
+    [`GET /ma/api/accounts/${ACCOUNT_ID}/events`]: [event],
+  });
+  t.after(failingMutes.close);
+  const scopedMutes = await startApiStub({
+    [`GET /ma/api/accounts/${ACCOUNT_ID}/events/active`]: [event],
+    [`GET /ma/api/accounts/${ACCOUNT_ID}/events`]: [event],
+    [`GET /ma/api/accounts/${ACCOUNT_ID}/mutes`]: [{ id: 'mute-cpu', hide: false, active: true, resource: { arn, refType: 'aws_arn' }, monitors: { RDS: ['rds_cpu'] } }],
+  });
+  t.after(scopedMutes.close);
+
+  const failing = await connectClient(t, new BluematadorMCPServer(API_KEY, ACCOUNT_ID, failingMutes.baseUrl));
+  const degraded = await failing.callTool({ name: 'get_event_context', arguments: { event_id: 'event-1', days: '14' } });
+  assert.notEqual(degraded.isError, true);
+  assert.match(degraded.content[0].text, /High RDS CPU \(warning\)/);
+  assert.match(degraded.content[0].text, /in the last 14 days/);
+  assert.match(degraded.content[0].text, /Mute rules were not checked:/);
+
+  const scoped = await connectClient(t, new BluematadorMCPServer(API_KEY, ACCOUNT_ID, scopedMutes.baseUrl));
+  const text = (await scoped.callTool({ name: 'get_event_context', arguments: { event_id: 'event-1' } })).content[0].text;
+  assert.match(text, /- mute-cpu: mutes only monitors RDS rds_cpu/);
+});
+
 test('serves protocol 2026-07-28 over stdio and still accepts the 2025 handshake', async (t) => {
   const api = await startApiStub({ [`GET /zi/api/accounts/${ACCOUNT_ID}/projects`]: [] });
   t.after(api.close);
