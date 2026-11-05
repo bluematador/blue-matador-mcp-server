@@ -277,6 +277,8 @@ export interface MetricUnit {
   unitShort: string;
 }
 
+export type EventCounts = Record<string, Record<string, Record<string, number>>>;
+
 export interface MetricGraph {
   metric: string;
   numerator: MetricUnit;

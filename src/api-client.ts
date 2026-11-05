@@ -24,6 +24,7 @@ import {
   UpdateOrganizationUserData,
   MetricsQuery,
   MetricGraph,
+  EventCounts,
   MuteRule,
   CreateMuteRuleData,
   MuteOptions
@@ -143,11 +144,11 @@ export class BluematadorApiClient {
     return response.data;
   }
 
-  async getActiveEventsSummary(accountId: string, project?: string): Promise<any> {
+  async getActiveEventsSummary(accountId: string, project?: string): Promise<EventCounts> {
     const params: any = {};
     if (project) params.project = project;
 
-    const response: AxiosResponse<any> = await this.client.get(
+    const response: AxiosResponse<EventCounts> = await this.client.get(
       `/ma/api/accounts/${accountId}/counts`,
       { params }
     );
