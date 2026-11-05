@@ -1373,6 +1373,7 @@ class BluematadorMCPServer {
       // Check if credentials are missing before attempting any tool call
       if (this.credentialsError) {
         return {
+          isError: true,
           content: [
             {
               type: 'text',
@@ -1521,30 +1522,30 @@ class BluematadorMCPServer {
         }
       } catch (error: any) {
         if (error instanceof ProtocolError) {
-          throw error;
+          if (error.code === ProtocolErrorCode.MethodNotFound) {
+            throw error;
+          }
+          return {
+            isError: true,
+            content: [{ type: 'text', text: error.message }]
+          };
         }
 
-        // Enhanced error handling with detailed information
         const errorDetails = this.formatDetailedError(error, name, args);
-
         const status = error.status || (error.response && error.response.status);
-        const message = error.message || 'An unknown error occurred';
 
-        if (status === 401) {
-          throw new ProtocolError(ProtocolErrorCode.InvalidRequest, `Authentication failed: ${errorDetails}`);
-        } else if (status === 404) {
-          throw new ProtocolError(ProtocolErrorCode.InvalidRequest, `Resource not found: ${errorDetails}`);
-        } else if (status === 400) {
-          throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Bad request: ${errorDetails}`);
-        } else if (status === 403) {
-          throw new ProtocolError(ProtocolErrorCode.InvalidRequest, `Access forbidden: ${errorDetails}`);
-        } else if (status === 429) {
-          throw new ProtocolError(ProtocolErrorCode.InternalError, `Rate limit exceeded: ${errorDetails}`);
-        } else if (status >= 500) {
-          throw new ProtocolError(ProtocolErrorCode.InternalError, `Server error: ${errorDetails}`);
-        } else {
-          throw new ProtocolError(ProtocolErrorCode.InternalError, `API error: ${errorDetails}`);
-        }
+        let label = error.config ? 'API error' : 'Tool error';
+        if (status === 401) label = 'Authentication failed';
+        else if (status === 403) label = 'Access forbidden';
+        else if (status === 404) label = 'Resource not found';
+        else if (status === 400) label = 'Bad request';
+        else if (status === 429) label = 'Rate limit exceeded';
+        else if (status >= 500) label = 'Server error';
+
+        return {
+          isError: true,
+          content: [{ type: 'text', text: `${label}: ${errorDetails}` }]
+        };
       }
     });
   }
