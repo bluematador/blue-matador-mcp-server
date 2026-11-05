@@ -23,7 +23,6 @@ import {
 } from './types.js';
 
 class BluematadorMCPServer {
-  private server: Server;
   private apiClient: BluematadorApiClient | null = null;
   private readonly accountId: string | null = null;
   private credentialsError: string | null = null;
@@ -59,8 +58,10 @@ class BluematadorMCPServer {
         baseUrl: finalBaseUrl
       });
     }
+  }
 
-    this.server = new Server(
+  private createServer(): Server {
+    const server = new Server(
       {
         name: 'bluematador-mcp-server',
         version: '1.0.0',
@@ -71,9 +72,9 @@ class BluematadorMCPServer {
         },
       }
     );
-
-    this.setupToolHandlers();
-    this.setupErrorHandling();
+    server.onerror = (error) => console.error('[MCP Error]', error);
+    this.setupToolHandlers(server);
+    return server;
   }
 
   private formatResourceInfo(source: any): string {
@@ -262,16 +263,8 @@ class BluematadorMCPServer {
     return errorInfo;
   }
 
-  private setupErrorHandling(): void {
-    this.server.onerror = (error) => console.error('[MCP Error]', error);
-    process.on('SIGINT', async () => {
-      await this.server.close();
-      process.exit(0);
-    });
-  }
-
-  private setupToolHandlers(): void {
-    this.server.setRequestHandler('tools/list', async (): Promise<ListToolsResult> => {
+  private setupToolHandlers(server: Server): void {
+    server.setRequestHandler('tools/list', async (): Promise<ListToolsResult> => {
       return {
         tools: [
           {
@@ -1341,7 +1334,7 @@ class BluematadorMCPServer {
       };
     });
 
-    this.server.setRequestHandler('tools/call', async (request) => {
+    server.setRequestHandler('tools/call', async (request) => {
       const { name, arguments: args } = request.params;
 
       const finalArgs = args || {};
@@ -2609,12 +2602,18 @@ class BluematadorMCPServer {
   }
 
   async run(): Promise<void> {
-    serveStdio(() => this.server);
+    const handle = serveStdio(() => this.createServer(), {
+      onerror: (error) => console.error('[MCP Error]', error)
+    });
+    process.on('SIGINT', async () => {
+      await handle.close();
+      process.exit(0);
+    });
     console.error('Bluematador MCP server running on stdio');
   }
 
   async connect(transport: any): Promise<void> {
-    await this.server.connect(transport);
+    await this.createServer().connect(transport);
   }
 }
 
