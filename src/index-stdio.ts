@@ -1,13 +1,8 @@
 #!/usr/bin/env node
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import {
-  CallToolRequestSchema,
-  ErrorCode,
-  ListToolsRequestSchema,
-  McpError,
-} from '@modelcontextprotocol/sdk/types.js';
+import { Server, ProtocolError, ProtocolErrorCode } from '@modelcontextprotocol/server';
+import type { CallToolResult, ListToolsResult, Tool, ToolAnnotations } from '@modelcontextprotocol/server';
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
 
 import { BluematadorApiClient } from './api-client.js';
 import {
@@ -27,8 +22,38 @@ import {
   MetricsQuery
 } from './types.js';
 
+const READ_ONLY: ToolAnnotations = { readOnlyHint: true, openWorldHint: true };
+const ADDS_DATA: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
+const DESTRUCTIVE: ToolAnnotations = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
+const DESTRUCTIVE_IDEMPOTENT: ToolAnnotations = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true };
+const TOGGLE: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true };
+
+// Tools that silence alerts count as destructive: an agent should not mute
+// monitors or turn off a notification channel without a confirmation.
+const ANNOTATIONS_BY_TOOL: Record<string, ToolAnnotations> = {
+  create_mute_rule: DESTRUCTIVE,
+};
+
+const ANNOTATIONS_BY_VERB: Record<string, ToolAnnotations> = {
+  get: READ_ONLY,
+  list: READ_ONLY,
+  create: ADDS_DATA,
+  invite: ADDS_DATA,
+  enable: TOGGLE,
+  mute: DESTRUCTIVE,
+  disable: DESTRUCTIVE_IDEMPOTENT,
+  update: DESTRUCTIVE_IDEMPOTENT,
+  delete: DESTRUCTIVE_IDEMPOTENT,
+};
+
+function withAnnotations(tools: Tool[]): Tool[] {
+  return tools.map((tool) => ({
+    ...tool,
+    annotations: { ...(ANNOTATIONS_BY_TOOL[tool.name] ?? ANNOTATIONS_BY_VERB[tool.name.split('_')[0]] ?? DESTRUCTIVE) },
+  }));
+}
+
 class BluematadorMCPServer {
-  private server: Server;
   private apiClient: BluematadorApiClient | null = null;
   private readonly accountId: string | null = null;
   private credentialsError: string | null = null;
@@ -64,8 +89,10 @@ class BluematadorMCPServer {
         baseUrl: finalBaseUrl
       });
     }
+  }
 
-    this.server = new Server(
+  private createServer(): Server {
+    const server = new Server(
       {
         name: 'bluematador-mcp-server',
         version: '1.0.0',
@@ -76,9 +103,9 @@ class BluematadorMCPServer {
         },
       }
     );
-
-    this.setupToolHandlers();
-    this.setupErrorHandling();
+    server.onerror = (error) => console.error('[MCP Error]', error);
+    this.setupToolHandlers(server);
+    return server;
   }
 
   private formatResourceInfo(source: any): string {
@@ -267,18 +294,10 @@ class BluematadorMCPServer {
     return errorInfo;
   }
 
-  private setupErrorHandling(): void {
-    this.server.onerror = (error) => console.error('[MCP Error]', error);
-    process.on('SIGINT', async () => {
-      await this.server.close();
-      process.exit(0);
-    });
-  }
-
-  private setupToolHandlers(): void {
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
+  private setupToolHandlers(server: Server): void {
+    server.setRequestHandler('tools/list', async (): Promise<ListToolsResult> => {
       return {
-        tools: [
+        tools: withAnnotations([
           {
             name: 'create_aws_integration',
             description: 'Create a new AWS integration in Bluematador',
@@ -1150,8 +1169,10 @@ class BluematadorMCPServer {
               type: 'object',
               properties: {
                 metrics: {
-                  type: 'string',
-                  description: 'Metric name to query (e.g., "aws.ec2.cpuutilization")'
+                  type: 'array',
+                  items: { type: 'string' },
+                  minItems: 1,
+                  description: 'Metric names to query (e.g., ["aws.ec2.cpu_utilization.percent"])'
                 },
                 agg: {
                   type: 'string',
@@ -1166,8 +1187,9 @@ class BluematadorMCPServer {
                   description: 'End time in ISO 8601 format'
                 },
                 groups: {
-                  type: 'string',
-                  description: 'Grouping dimensions (optional)'
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Label dimensions to split the series by. Labels differ per metric (e.g., ["instance_id"] for aws.ec2.cpu_utilization.percent). An unknown label returns no series. Optional.'
                 }
               },
               required: ['metrics', 'agg', 'start', 'end']
@@ -1339,11 +1361,11 @@ class BluematadorMCPServer {
               required: ['resourcePattern']
             }
           }
-        ]
+        ])
       };
     });
 
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    server.setRequestHandler('tools/call', async (request) => {
       const { name, arguments: args } = request.params;
 
       const finalArgs = args || {};
@@ -1495,10 +1517,10 @@ class BluematadorMCPServer {
             return await this.handleMuteResourcesByWildcard(finalArgs);
 
           default:
-            throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+            throw new ProtocolError(ProtocolErrorCode.MethodNotFound, `Unknown tool: ${name}`);
         }
       } catch (error: any) {
-        if (error instanceof McpError) {
+        if (error instanceof ProtocolError) {
           throw error;
         }
 
@@ -1509,19 +1531,19 @@ class BluematadorMCPServer {
         const message = error.message || 'An unknown error occurred';
 
         if (status === 401) {
-          throw new McpError(ErrorCode.InvalidRequest, `Authentication failed: ${errorDetails}`);
+          throw new ProtocolError(ProtocolErrorCode.InvalidRequest, `Authentication failed: ${errorDetails}`);
         } else if (status === 404) {
-          throw new McpError(ErrorCode.InvalidRequest, `Resource not found: ${errorDetails}`);
+          throw new ProtocolError(ProtocolErrorCode.InvalidRequest, `Resource not found: ${errorDetails}`);
         } else if (status === 400) {
-          throw new McpError(ErrorCode.InvalidParams, `Bad request: ${errorDetails}`);
+          throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Bad request: ${errorDetails}`);
         } else if (status === 403) {
-          throw new McpError(ErrorCode.InvalidRequest, `Access forbidden: ${errorDetails}`);
+          throw new ProtocolError(ProtocolErrorCode.InvalidRequest, `Access forbidden: ${errorDetails}`);
         } else if (status === 429) {
-          throw new McpError(ErrorCode.InternalError, `Rate limit exceeded: ${errorDetails}`);
+          throw new ProtocolError(ProtocolErrorCode.InternalError, `Rate limit exceeded: ${errorDetails}`);
         } else if (status >= 500) {
-          throw new McpError(ErrorCode.InternalError, `Server error: ${errorDetails}`);
+          throw new ProtocolError(ProtocolErrorCode.InternalError, `Server error: ${errorDetails}`);
         } else {
-          throw new McpError(ErrorCode.InternalError, `API error: ${errorDetails}`);
+          throw new ProtocolError(ProtocolErrorCode.InternalError, `API error: ${errorDetails}`);
         }
       }
     });
@@ -1534,7 +1556,7 @@ class BluematadorMCPServer {
     return { apiClient: this.apiClient, accountId: this.accountId };
   }
 
-  private async handleCreateAWSIntegration(args: any) {
+  private async handleCreateAWSIntegration(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { name, roleArn, externalId } = args;
     const integrationData: AWSIntegrationData = { name, roleArn, externalId };
@@ -1551,7 +1573,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateAzureIntegration(args: any) {
+  private async handleCreateAzureIntegration(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { name, subscriptionId, tenantId, applicationId, secret } = args;
     const integrationData: AzureIntegrationData = { name, subscriptionId, tenantId, applicationId, secret };
@@ -1568,7 +1590,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleListIntegrations(args: any) {
+  private async handleListIntegrations(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     
     const integrations = await apiClient.listIntegrations(accountId);
@@ -1599,7 +1621,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateAWSIntegration(args: any) {
+  private async handleUpdateAWSIntegration(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { inboundId, name, roleArn, externalId } = args;
     const integrationData: AWSIntegrationData = { name, roleArn, externalId };
@@ -1616,7 +1638,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateAzureIntegration(args: any) {
+  private async handleUpdateAzureIntegration(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { inboundId, name, subscriptionId, tenantId, applicationId, secret } = args;
     const integrationData: AzureIntegrationData = { name, subscriptionId, tenantId, applicationId, secret };
@@ -1633,7 +1655,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleEnableIntegration(args: any) {
+  private async handleEnableIntegration(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { inboundId } = args;
     await apiClient.enableIntegration(accountId, inboundId);
@@ -1648,7 +1670,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleDisableIntegration(args: any) {
+  private async handleDisableIntegration(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { inboundId } = args;
     await apiClient.disableIntegration(accountId, inboundId);
@@ -1663,7 +1685,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleDeleteIntegration(args: any) {
+  private async handleDeleteIntegration(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { inboundId } = args;
     await apiClient.deleteIntegration(accountId, inboundId);
@@ -1679,7 +1701,7 @@ class BluematadorMCPServer {
   }
 
   // Events handlers
-  private async handleGetOpenedEvents(args: any) {
+  private async handleGetOpenedEvents(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { start, end, project } = args;
     const events = await apiClient.getOpenedEvents(accountId, start, end, project);
@@ -1716,7 +1738,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleGetActiveEvents(args: any) {
+  private async handleGetActiveEvents(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { project } = args;
     const events = await apiClient.getActiveEvents(accountId, project);
@@ -1753,7 +1775,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleGetActiveEventsSummary(args: any) {
+  private async handleGetActiveEventsSummary(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { project } = args;
     const summary = await apiClient.getActiveEventsSummary(accountId, project);
@@ -1769,7 +1791,7 @@ class BluematadorMCPServer {
   }
 
   // Projects handlers
-  private async handleListProjects(args: any) {
+  private async handleListProjects(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     
     const projects = await apiClient.listProjects(accountId);
@@ -1798,7 +1820,7 @@ class BluematadorMCPServer {
   }
 
   // Users handlers
-  private async handleListUsers(args: any) {
+  private async handleListUsers(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     
     const result = await apiClient.listUsers(accountId);
@@ -1826,7 +1848,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleInviteUsers(args: any) {
+  private async handleInviteUsers(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { users } = args;
     await apiClient.inviteUsers(accountId, users as InviteUserData[]);
@@ -1844,7 +1866,7 @@ class BluematadorMCPServer {
   }
 
   // Notifications handlers
-  private async handleListNotifications(args: any) {
+  private async handleListNotifications(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     
     const notifications = await apiClient.listNotifications(accountId);
@@ -1874,7 +1896,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateEmailNotification(args: any) {
+  private async handleCreateEmailNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { email, severities } = args;
     const data: EmailNotificationData = {
@@ -1894,7 +1916,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreatePagerDutyNotification(args: any) {
+  private async handleCreatePagerDutyNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { name, account, serviceName, serviceSecret, severities } = args;
     const data: PagerDutyNotificationData = {
@@ -1917,7 +1939,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleEnableNotification(args: any) {
+  private async handleEnableNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId } = args;
     await apiClient.enableNotification(accountId, outboundId);
@@ -1932,7 +1954,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleDisableNotification(args: any) {
+  private async handleDisableNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId } = args;
     await apiClient.disableNotification(accountId, outboundId);
@@ -1947,7 +1969,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleDeleteNotification(args: any) {
+  private async handleDeleteNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId } = args;
     await apiClient.deleteNotification(accountId, outboundId);
@@ -1963,7 +1985,7 @@ class BluematadorMCPServer {
   }
 
   // Mute Rules handlers
-  private async handleListMuteRules(args: any) {
+  private async handleListMuteRules(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { includeInactive } = args;
     const muteRules = await apiClient.listMuteRules(accountId, includeInactive);
@@ -2002,7 +2024,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateMuteRule(args: any) {
+  private async handleCreateMuteRule(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { hide, resource, projects, regions, schedule } = args;
     const data: CreateMuteRuleData = {
@@ -2035,7 +2057,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleGetMuteRegions(args: any) {
+  private async handleGetMuteRegions(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     
     const regions = await apiClient.getMuteRegions(accountId);
@@ -2051,7 +2073,7 @@ class BluematadorMCPServer {
   }
 
   // Additional Notification handlers
-  private async handleCreateOpsGenieNotification(args: any) {
+  private async handleCreateOpsGenieNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { name, apikey, severities } = args;
     const data: OpsGenieNotificationData = {
@@ -2072,7 +2094,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateSNSNotification(args: any) {
+  private async handleCreateSNSNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { name, topicArn, accessKeyId, secretAccessKey, sendResolve, sendJson, severities } = args;
     const data: SNSNotificationData = {
@@ -2097,7 +2119,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateVictorOpsNotification(args: any) {
+  private async handleCreateVictorOpsNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { name, integrationId, routingKey, severities } = args;
     const data: VictorOpsNotificationData = {
@@ -2119,7 +2141,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateSquadCastNotification(args: any) {
+  private async handleCreateSquadCastNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { name, sourceInstance, severities } = args;
     const data: SquadCastNotificationData = {
@@ -2140,7 +2162,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateServiceNowNotification(args: any) {
+  private async handleCreateServiceNowNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { name, instanceName, username, password, sourceInstance, severities } = args;
     const data: ServiceNowNotificationData = {
@@ -2167,7 +2189,7 @@ class BluematadorMCPServer {
   }
 
   // Update Notification handlers
-  private async handleUpdateEmailNotification(args: any) {
+  private async handleUpdateEmailNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId, email, severities } = args;
     const data: EmailNotificationData = {
@@ -2187,7 +2209,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdatePagerDutyNotification(args: any) {
+  private async handleUpdatePagerDutyNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, account, serviceName, serviceSecret, severities } = args;
     const data: PagerDutyNotificationData = {
@@ -2210,7 +2232,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateOpsGenieNotification(args: any) {
+  private async handleUpdateOpsGenieNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, apikey, severities } = args;
     const data: OpsGenieNotificationData = {
@@ -2231,7 +2253,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateSNSNotification(args: any) {
+  private async handleUpdateSNSNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, topicArn, accessKeyId, secretAccessKey, sendResolve, sendJson, severities } = args;
     const data: SNSNotificationData = {
@@ -2256,7 +2278,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateVictorOpsNotification(args: any) {
+  private async handleUpdateVictorOpsNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, integrationId, routingKey, severities } = args;
     const data: VictorOpsNotificationData = {
@@ -2278,7 +2300,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateSquadCastNotification(args: any) {
+  private async handleUpdateSquadCastNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, sourceInstance, severities } = args;
     const data: SquadCastNotificationData = {
@@ -2299,7 +2321,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateServiceNowNotification(args: any) {
+  private async handleUpdateServiceNowNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, instanceName, username, password, sourceInstance, severities } = args;
     const data: ServiceNowNotificationData = {
@@ -2326,9 +2348,11 @@ class BluematadorMCPServer {
   }
 
   // Metrics handler
-  private async handleGetMetrics(args: any) {
+  private async handleGetMetrics(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
-    const { metrics, agg, start, end, groups } = args;
+    const { agg, start, end } = args;
+    const metrics: string[] = [args.metrics].flat();
+    const groups: string[] = args.groups === undefined ? [] : [args.groups].flat();
     const query: MetricsQuery = {
       accountId: accountId,
       metrics,
@@ -2339,19 +2363,24 @@ class BluematadorMCPServer {
     };
 
     const result = await apiClient.getMetrics(query);
+    const withData = new Set(result.filter((graph) => graph.series.length > 0).map((graph) => graph.metric));
+    const missing = metrics.filter((metric) => !withData.has(metric));
+    const missingNote = missing.length > 0
+      ? `\n\nNo data returned for: ${missing.join(', ')}. The metric name or a group label may be wrong, or the metric had no data in this range.`
+      : '';
 
     return {
       content: [
         {
           type: 'text',
-          text: `Metrics query results:\n\n**Query:** ${metrics} (${agg})\n**Time Range:** ${start} to ${end}\n**Groups:** ${groups || 'None'}\n\n**Results:**\n${JSON.stringify(result, null, 2)}`
+          text: `Metrics query results:\n\n**Query:** ${metrics.join(', ')} (${agg})\n**Time Range:** ${start} to ${end}\n**Groups:** ${groups.length > 0 ? groups.join(', ') : 'None'}\n\n**Results:**\n${JSON.stringify(result, null, 2)}${missingNote}`
         }
       ]
     };
   }
 
   // Advanced Mute Rule handlers
-  private async handleGetMuteMonitors(args: any) {
+  private async handleGetMuteMonitors(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     
     const result = await apiClient.getMuteMonitors(accountId);
@@ -2370,7 +2399,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleGetMuteResources(args: any) {
+  private async handleGetMuteResources(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { page, pageSize } = args;
     const result = await apiClient.getMuteResources(accountId, page, pageSize);
@@ -2400,7 +2429,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleDeleteMuteRule(args: any) {
+  private async handleDeleteMuteRule(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { muteId } = args;
     await apiClient.deleteMuteRule(accountId, muteId);
@@ -2415,7 +2444,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleMuteMonitorsByService(args: any) {
+  private async handleMuteMonitorsByService(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { serviceName, monitorNames, hide = false, projects, regions, schedule } = args;
 
@@ -2430,8 +2459,8 @@ class BluematadorMCPServer {
 
     if (!serviceKey) {
       const availableServices = Object.keys(availableMonitors).join(', ');
-      throw new McpError(
-        ErrorCode.InvalidParams,
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidParams,
         `Service "${serviceName}" not found. Available services: ${availableServices}`
       );
     }
@@ -2447,8 +2476,8 @@ class BluematadorMCPServer {
         (monitor: string) => !availableMonitors[serviceKey].includes(monitor)
       );
       if (invalidMonitors.length > 0) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
           `Invalid monitors for service "${serviceKey}": ${invalidMonitors.join(', ')}. ` +
           `Available monitors: ${availableMonitors[serviceKey].join(', ')}`
         );
@@ -2495,7 +2524,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleMuteResourcesByWildcard(args: any) {
+  private async handleMuteResourcesByWildcard(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { resourcePattern, serviceType, hide = false, projects, regions, schedule } = args;
 
@@ -2504,8 +2533,8 @@ class BluematadorMCPServer {
     const allResources = resourcesResponse.resources;
 
     if (!allResources || allResources.length === 0) {
-      throw new McpError(
-        ErrorCode.InvalidRequest,
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidRequest,
         'No resources found in the account to apply wildcard pattern to.'
       );
     }
@@ -2540,8 +2569,8 @@ class BluematadorMCPServer {
 
     if (matchingResources.length === 0) {
       const serviceFilter = serviceType ? ` and service type "${serviceType}"` : '';
-      throw new McpError(
-        ErrorCode.InvalidRequest,
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidRequest,
         `No resources found matching pattern "${resourcePattern}"${serviceFilter}. ` +
         `Total resources available: ${allResources.length}`
       );
@@ -2604,13 +2633,18 @@ class BluematadorMCPServer {
   }
 
   async run(): Promise<void> {
-    const transport = new StdioServerTransport();
-    await this.server.connect(transport);
+    const handle = serveStdio(() => this.createServer(), {
+      onerror: (error) => console.error('[MCP Error]', error)
+    });
+    process.on('SIGINT', async () => {
+      await handle.close();
+      process.exit(0);
+    });
     console.error('Bluematador MCP server running on stdio');
   }
 
   async connect(transport: any): Promise<void> {
-    await this.server.connect(transport);
+    await this.createServer().connect(transport);
   }
 }
 
