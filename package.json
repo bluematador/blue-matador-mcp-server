@@ -19,14 +19,15 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
-    "test": "node test/integration/test-mute-monitors.js",
-    "test:integration": "node test/integration/test-mute-monitors.js",
+    "pretest": "tsc",
+    "test": "node --test test/unit/tools.test.js",
     "test:mcp-direct": "node test/integration/test_mcp_direct.js",
     "test:mcp-tools": "node test/integration/test_mcp_tools.js",
     "clean": "rm -rf dist",
     "rebuild": "npm run clean && npm run build",
     "lint": "echo 'Linting not configured yet'",
     "typecheck": "tsc --noEmit",
+    "docs": "tsc && node scripts/generate-tool-reference.mjs",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -42,7 +43,7 @@
     "infrastructure"
   ],
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=20.0.0"
   },
   "files": [
     "dist/",
@@ -55,10 +56,11 @@
   "author": "Bluematador",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.10.0",
+    "@modelcontextprotocol/server": "^2.4.0",
     "axios": "^1.6.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.4.0",
     "@types/node": "^20.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"

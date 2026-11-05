@@ -60,18 +60,18 @@ Configure Claude Desktop to use your local development version:
 - `npm run clean` - Remove the dist directory
 - `npm run rebuild` - Clean and rebuild
 - `npm run typecheck` - Run TypeScript type checking
-- `npm test` - Run integration tests
+- `npm run docs` - Regenerate `docs/API-REFERENCE.md` from the tool list. `npm test` fails until you commit the result after changing a tool
+- `npm test` - Build, then run the unit tests
 
 ### Testing
 
-Run integration tests:
+The unit tests drive the real server through an in-memory MCP client and point it at a local HTTP stub, so they need no credentials or network access:
 ```bash
 npm test
 ```
 
 Run specific test files:
 ```bash
-npm run test:integration
 npm run test:mcp-direct
 npm run test:mcp-tools
 ```
@@ -82,14 +82,14 @@ npm run test:mcp-tools
 
 This server uses the **stdio** transport as specified in the MCP protocol.
 
-- **Protocol Version**: 2024-11-05
+- **Protocol Version**: 2026-07-28. Clients on 2025-11-25, 2025-06-18, 2025-03-26, and 2024-11-05 still connect through the older handshake.
 - **Transport**: stdio (Standard Input/Output)
 
 ---
 
 ## 📦 Requirements
 
-- **Node.js**: 16.x or higher
+- **Node.js**: 20.x or higher
 - **TypeScript**: 5.x
 - **Bluematador Account**: With API access for testing
 

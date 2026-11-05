@@ -10,7 +10,7 @@ Connect your Bluematador monitoring to Claude Desktop and Claude Code **securely
 
 ### Requirements
 
-- **Node.js**: 16.x or higher
+- **Node.js**: 20.x or higher
 
 ### Installation
 
@@ -72,6 +72,7 @@ Ask Claude to help with your Bluematador monitoring using natural language:
 
 ### 📊 Monitoring & Alerts
 - Check active alerts and events in real-time
+- Get everything about one alert in a single call: details, the affected resource's ARN and tags, earlier events on the same resource, and mute rules that cover it
 - Query historical monitoring data
 - Get infrastructure health summaries
 - View metrics and performance data
@@ -116,6 +117,7 @@ Once connected, use natural language with Claude:
 
 ```
 You: "Show me active Bluematador alerts"
+You: "Get the context for that RDS alert so we can fix it"
 You: "Create a mute rule for all SQS monitors in us-east-1"
 You: "List my AWS integrations"
 You: "Invite john@company.com as an admin"

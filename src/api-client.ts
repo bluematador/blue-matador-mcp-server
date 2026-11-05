@@ -23,6 +23,8 @@ import {
   InviteOrganizationUserData,
   UpdateOrganizationUserData,
   MetricsQuery,
+  MetricGraph,
+  EventCounts,
   MuteRule,
   CreateMuteRuleData,
   MuteOptions
@@ -142,11 +144,11 @@ export class BluematadorApiClient {
     return response.data;
   }
 
-  async getActiveEventsSummary(accountId: string, project?: string): Promise<any> {
+  async getActiveEventsSummary(accountId: string, project?: string): Promise<EventCounts> {
     const params: any = {};
     if (project) params.project = project;
 
-    const response: AxiosResponse<any> = await this.client.get(
+    const response: AxiosResponse<EventCounts> = await this.client.get(
       `/ma/api/accounts/${accountId}/counts`,
       { params }
     );
@@ -400,11 +402,11 @@ export class BluematadorApiClient {
   }
 
   // Metrics
-  async getMetrics(query: MetricsQuery): Promise<any> {
+  async getMetrics(query: MetricsQuery): Promise<MetricGraph[]> {
     const { accountId, ...params } = query;
-    const response: AxiosResponse<any> = await this.client.get(
-      `/me/api/accounts/${accountId}/metrics`,
-      { params }
+    const response: AxiosResponse<MetricGraph[]> = await this.client.get(
+      `/me/api/accounts/${accountId}/metrics/v2`,
+      { params, paramsSerializer: { indexes: null } }
     );
     return response.data;
   }
