@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Server, ProtocolError, ProtocolErrorCode } from '@modelcontextprotocol/server';
-import type { CallToolResult, ListToolsResult } from '@modelcontextprotocol/server';
+import type { CallToolResult, ListToolsResult, Tool, ToolAnnotations } from '@modelcontextprotocol/server';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 
 import { BluematadorApiClient } from './api-client.js';
@@ -21,6 +21,37 @@ import {
   MuteRuleSchedule,
   MetricsQuery
 } from './types.js';
+
+const READ_ONLY: ToolAnnotations = { readOnlyHint: true, openWorldHint: true };
+const ADDS_DATA: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
+const DESTRUCTIVE: ToolAnnotations = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
+const DESTRUCTIVE_IDEMPOTENT: ToolAnnotations = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true };
+const TOGGLE: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true };
+
+// Tools that silence alerts count as destructive: an agent should not mute
+// monitors or turn off a notification channel without a confirmation.
+const ANNOTATIONS_BY_TOOL: Record<string, ToolAnnotations> = {
+  create_mute_rule: DESTRUCTIVE,
+};
+
+const ANNOTATIONS_BY_VERB: Record<string, ToolAnnotations> = {
+  get: READ_ONLY,
+  list: READ_ONLY,
+  create: ADDS_DATA,
+  invite: ADDS_DATA,
+  enable: TOGGLE,
+  mute: DESTRUCTIVE,
+  disable: DESTRUCTIVE_IDEMPOTENT,
+  update: DESTRUCTIVE_IDEMPOTENT,
+  delete: DESTRUCTIVE_IDEMPOTENT,
+};
+
+function withAnnotations(tools: Tool[]): Tool[] {
+  return tools.map((tool) => ({
+    ...tool,
+    annotations: { ...(ANNOTATIONS_BY_TOOL[tool.name] ?? ANNOTATIONS_BY_VERB[tool.name.split('_')[0]] ?? DESTRUCTIVE) },
+  }));
+}
 
 class BluematadorMCPServer {
   private apiClient: BluematadorApiClient | null = null;
@@ -266,7 +297,7 @@ class BluematadorMCPServer {
   private setupToolHandlers(server: Server): void {
     server.setRequestHandler('tools/list', async (): Promise<ListToolsResult> => {
       return {
-        tools: [
+        tools: withAnnotations([
           {
             name: 'create_aws_integration',
             description: 'Create a new AWS integration in Bluematador',
@@ -1330,7 +1361,7 @@ class BluematadorMCPServer {
               required: ['resourcePattern']
             }
           }
-        ]
+        ])
       };
     });
 
