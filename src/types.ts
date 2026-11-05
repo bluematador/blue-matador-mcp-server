@@ -260,11 +260,31 @@ export interface UpdateOrganizationUserData {
 // Metrics
 export interface MetricsQuery {
   accountId: string;
-  metrics: string;
+  metrics: string[];
   agg: string;
   start: string;
   end: string;
-  groups?: string;
+  groups?: string[];
+}
+
+export interface GroupSeries {
+  group?: Record<string, string>;
+  points: Array<[string, number]>;
+}
+
+export interface MetricUnit {
+  unit: string;
+  unitShort: string;
+}
+
+export type EventCounts = Record<string, Record<string, Record<string, number>>>;
+
+export interface MetricGraph {
+  metric: string;
+  numerator: MetricUnit;
+  denominator: MetricUnit;
+  groupedBy: string[];
+  series: GroupSeries[];
 }
 
 // Mutes

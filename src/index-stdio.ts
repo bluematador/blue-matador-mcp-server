@@ -1,13 +1,8 @@
 #!/usr/bin/env node
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import {
-  CallToolRequestSchema,
-  ErrorCode,
-  ListToolsRequestSchema,
-  McpError,
-} from '@modelcontextprotocol/sdk/types.js';
+import { Server, ProtocolError, ProtocolErrorCode } from '@modelcontextprotocol/server';
+import type { CallToolResult, ListToolsResult, Tool, ToolAnnotations } from '@modelcontextprotocol/server';
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
 
 import { BluematadorApiClient } from './api-client.js';
 import {
@@ -24,11 +19,182 @@ import {
   ServiceNowNotificationData,
   CreateMuteRuleData,
   MuteRuleSchedule,
-  MetricsQuery
+  MetricsQuery,
+  MetricGraph,
+  GroupSeries,
+  EventCounts,
+  Event,
+  MuteRule
 } from './types.js';
 
+const READ_ONLY: ToolAnnotations = { readOnlyHint: true, openWorldHint: true };
+const ADDS_DATA: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
+const DESTRUCTIVE: ToolAnnotations = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
+const DESTRUCTIVE_IDEMPOTENT: ToolAnnotations = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true };
+const TOGGLE: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true };
+
+// Tools that silence alerts count as destructive: an agent should not mute
+// monitors or turn off a notification channel without a confirmation.
+const ANNOTATIONS_BY_TOOL: Record<string, ToolAnnotations> = {
+  create_mute_rule: DESTRUCTIVE,
+};
+
+const ANNOTATIONS_BY_VERB: Record<string, ToolAnnotations> = {
+  get: READ_ONLY,
+  list: READ_ONLY,
+  create: ADDS_DATA,
+  invite: ADDS_DATA,
+  enable: TOGGLE,
+  mute: DESTRUCTIVE,
+  disable: DESTRUCTIVE_IDEMPOTENT,
+  update: DESTRUCTIVE_IDEMPOTENT,
+  delete: DESTRUCTIVE_IDEMPOTENT,
+};
+
+function formatNumber(value: number): string {
+  return String(Number(Math.abs(value) >= 1 ? value.toFixed(2) : value.toPrecision(3)));
+}
+
+function formatUnit(graph: MetricGraph): string {
+  const numerator = graph.numerator.unitShort || graph.numerator.unit;
+  const denominator = graph.denominator.unitShort || graph.denominator.unit;
+  return denominator ? `${numerator}/${denominator}` : numerator;
+}
+
+const SERIES_SHOWN = 25;
+
+interface SeriesSummary {
+  label: string;
+  count: number;
+  last: number;
+  min: number;
+  max: number;
+  maxAt: string;
+  avg: number;
+}
+
+function summarizeSeries(series: GroupSeries): SeriesSummary {
+  const points = series.points.filter(([, value]) => Number.isFinite(value));
+  const label = Object.entries(series.group ?? {}).map(([key, value]) => `${key}=${value}`).join(', ') || 'all';
+  const peak = points.reduce<[string, number] | undefined>((best, point) => (!best || point[1] > best[1] ? point : best), undefined);
+  return {
+    label,
+    count: points.length,
+    last: points[points.length - 1]?.[1] ?? NaN,
+    min: points.reduce((min, [, value]) => Math.min(min, value), Infinity),
+    max: peak?.[1] ?? NaN,
+    maxAt: peak?.[0] ?? '',
+    avg: points.reduce((sum, [, value]) => sum + value, 0) / points.length,
+  };
+}
+
+function summarizeGraph(graph: MetricGraph): SeriesSummary[] {
+  return graph.series
+    .map(summarizeSeries)
+    .filter((summary) => summary.count > 0)
+    .sort((a, b) => b.max - a.max);
+}
+
+function formatMetricGraph(graph: MetricGraph, summaries: SeriesSummary[], agg: string): string {
+  const lines = summaries.slice(0, SERIES_SHOWN).map((s) =>
+    `- ${s.label}: last ${formatNumber(s.last)}, min ${formatNumber(s.min)}, max ${formatNumber(s.max)} at ${s.maxAt}, avg ${formatNumber(s.avg)} (${s.count} points)`
+  );
+  if (summaries.length > SERIES_SHOWN) {
+    lines.push(`- ${summaries.length - SERIES_SHOWN} more series not shown. Narrow the groups or pass include_points to see them.`);
+  }
+  return [`${graph.metric} (${formatUnit(graph)}, ${agg}): ${summaries.length} series, highest max first`, ...lines].join('\n');
+}
+
+function formatEventCounts(counts: EventCounts): string {
+  return Object.entries(counts ?? {}).map(([bucket, bySeverity = {}]) => {
+    const name = bucket.charAt(0).toUpperCase() + bucket.slice(1);
+    const totals = Object.entries(bySeverity)
+      .map(([severity, days]) => `${severity} ${Object.values(days ?? {}).reduce((sum, n) => sum + (Number(n) || 0), 0)}`)
+      .join(', ');
+    const daily = Object.entries(bySeverity).flatMap(([severity, days]) => {
+      const nonZero = Object.entries(days ?? {})
+        .filter(([, n]) => Number(n) > 0)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([day, n]) => `${day.slice(0, 10)} ${n}`);
+      return nonZero.length > 0 ? [`  ${severity}: ${nonZero.join(', ')}`] : [];
+    });
+    return [`${name}: ${totals}`, ...daily].join('\n');
+  }).join('\n\n');
+}
+
+const RELATED_EVENTS_SHOWN = 10;
+
+type Lookup<T> =
+  | { kind: 'found'; items: T[] }
+  | { kind: 'skipped'; reason: string }
+  | { kind: 'failed'; reason: string };
+
+function describeMuteScope(rule: MuteRule): string {
+  const monitors = Object.entries(rule.monitors ?? {}).flatMap(([service, names]) => names.map((name) => `${service} ${name}`));
+  return monitors.length > 0 ? `only monitors ${monitors.join(', ')}` : 'all monitors';
+}
+
+function formatEventContext(event: Event, related: Lookup<Event>, mutes: Lookup<MuteRule>, days: number): string {
+  const source = event.source;
+  const lines = [
+    `${event.typeText} (${event.severity})`,
+    event.summaryText,
+    `Event ID: ${event.id}`,
+    `Opened: ${event.opened}. ${event.closed ? `Closed: ${event.closed}.` : 'Still active.'}`,
+    `Muted by Bluematador: ${event.muted ? 'yes' : 'no'}${event.hidden ? ' (hidden)' : ''}`,
+    '',
+    `Resource: ${source?.label || source?.text || 'unknown'}`,
+    `ARN: ${source?.ref?.arn ?? 'none'}`,
+    `Type: ${source?.ref?.refType ?? 'unknown'}`,
+  ];
+  if (source?.tags?.length) {
+    lines.push(`Tags: ${source.tags.map((tag) => `${tag.key}=${tag.value}`).join(', ')}`);
+  }
+  if (event.detailTexts?.length) {
+    lines.push('', 'Details:', ...event.detailTexts.map((detail) => `- ${detail}`));
+  }
+  if (event.links?.length) {
+    lines.push('', 'Links:', ...event.links.map((link) => `- ${link.text}: ${link.url}`));
+  }
+
+  lines.push('');
+  if (related.kind === 'found') {
+    const items = related.items;
+    lines.push(`${items.length} other event${items.length === 1 ? '' : 's'} on this resource in the last ${days} days`);
+    if (items.length > 0) {
+      const byType = new Map<string, number>();
+      for (const other of items) byType.set(other.typeText, (byType.get(other.typeText) ?? 0) + 1);
+      lines.push(`By type: ${[...byType].sort(([, a], [, b]) => b - a).map(([type, count]) => `${type} ${count}`).join(', ')}`);
+      lines.push(`Most recent ${Math.min(items.length, RELATED_EVENTS_SHOWN)}:`);
+      lines.push(...items.slice(0, RELATED_EVENTS_SHOWN).map((other) =>
+        `- ${other.opened} ${other.typeText} (${other.severity}), ${other.closed ? `closed ${other.closed}` : 'still active'}, ID ${other.id}`
+      ));
+    }
+  } else {
+    lines.push(`Related events were not checked: ${related.reason}`);
+  }
+
+  lines.push('');
+  if (mutes.kind === 'found') {
+    lines.push(mutes.items.length > 0 ? 'Mute rules scoped to this resource ARN:' : 'No mute rules scoped to this resource ARN.');
+    lines.push(...mutes.items.map((rule) => `- ${rule.id}: ${rule.hide ? 'hides' : 'mutes'} ${describeMuteScope(rule)}`));
+    lines.push('Rules scoped by project, region, or monitor alone are not checked here. "Muted by Bluematador" above is the API\'s own answer.');
+  } else {
+    lines.push(`Mute rules were not checked: ${mutes.reason}`);
+  }
+
+  lines.push('', 'For metrics, call get_metrics for this resource. Group labels differ per metric (EC2 uses instance_id).');
+  return lines.join('\n');
+}
+
+function withAnnotations(tools: Tool[]): Tool[] {
+  return tools.map((tool) => ({
+    ...tool,
+    annotations: { ...(ANNOTATIONS_BY_TOOL[tool.name] ?? ANNOTATIONS_BY_VERB[tool.name.split('_')[0]] ?? DESTRUCTIVE) },
+  }));
+}
+
 class BluematadorMCPServer {
-  private server: Server;
   private apiClient: BluematadorApiClient | null = null;
   private readonly accountId: string | null = null;
   private credentialsError: string | null = null;
@@ -64,8 +230,10 @@ class BluematadorMCPServer {
         baseUrl: finalBaseUrl
       });
     }
+  }
 
-    this.server = new Server(
+  private createServer(): Server {
+    const server = new Server(
       {
         name: 'bluematador-mcp-server',
         version: '1.0.0',
@@ -76,9 +244,9 @@ class BluematadorMCPServer {
         },
       }
     );
-
-    this.setupToolHandlers();
-    this.setupErrorHandling();
+    server.onerror = (error) => console.error('[MCP Error]', error);
+    this.setupToolHandlers(server);
+    return server;
   }
 
   private formatResourceInfo(source: any): string {
@@ -267,18 +435,10 @@ class BluematadorMCPServer {
     return errorInfo;
   }
 
-  private setupErrorHandling(): void {
-    this.server.onerror = (error) => console.error('[MCP Error]', error);
-    process.on('SIGINT', async () => {
-      await this.server.close();
-      process.exit(0);
-    });
-  }
-
-  private setupToolHandlers(): void {
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
+  private setupToolHandlers(server: Server): void {
+    server.setRequestHandler('tools/list', async (): Promise<ListToolsResult> => {
       return {
-        tools: [
+        tools: withAnnotations([
           {
             name: 'create_aws_integration',
             description: 'Create a new AWS integration in Bluematador',
@@ -478,6 +638,24 @@ class BluematadorMCPServer {
                 }
               },
               required: []
+            }
+          },
+          {
+            name: 'get_event_context',
+            description: 'Everything needed to act on one event: the event and its details, the affected resource (ARN, type, tags), other events on the same resource, and mute rules that cover it. Use this before investigating or fixing an alert.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                event_id: {
+                  type: 'string',
+                  description: 'Event ID, from get_active_events or get_opened_events'
+                },
+                days: {
+                  type: 'number',
+                  description: 'How many days back to look for the event and for related events (default 7)'
+                }
+              },
+              required: ['event_id']
             }
           },
           {
@@ -1145,13 +1323,15 @@ class BluematadorMCPServer {
           // Metrics
           {
             name: 'get_metrics',
-            description: 'Query Bluematador metrics data',
+            description: 'Query Bluematador metrics. Returns one line per series with the last, min, max (and when it happened), and average values, highest max first. Pass include_points for the raw time series.',
             inputSchema: {
               type: 'object',
               properties: {
                 metrics: {
-                  type: 'string',
-                  description: 'Metric name to query (e.g., "aws.ec2.cpuutilization")'
+                  type: 'array',
+                  items: { type: 'string' },
+                  minItems: 1,
+                  description: 'Metric names to query (e.g., ["aws.ec2.cpu_utilization.percent"])'
                 },
                 agg: {
                   type: 'string',
@@ -1166,8 +1346,13 @@ class BluematadorMCPServer {
                   description: 'End time in ISO 8601 format'
                 },
                 groups: {
-                  type: 'string',
-                  description: 'Grouping dimensions (optional)'
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Label dimensions to split the series by. Labels differ per metric (e.g., ["instance_id"] for aws.ec2.cpu_utilization.percent). An unknown label returns no series. Optional.'
+                },
+                include_points: {
+                  type: 'boolean',
+                  description: 'Also return every raw [timestamp, value] point. Off by default; the summary per series is usually enough.'
                 }
               },
               required: ['metrics', 'agg', 'start', 'end']
@@ -1339,11 +1524,11 @@ class BluematadorMCPServer {
               required: ['resourcePattern']
             }
           }
-        ]
+        ])
       };
     });
 
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    server.setRequestHandler('tools/call', async (request) => {
       const { name, arguments: args } = request.params;
 
       const finalArgs = args || {};
@@ -1351,6 +1536,7 @@ class BluematadorMCPServer {
       // Check if credentials are missing before attempting any tool call
       if (this.credentialsError) {
         return {
+          isError: true,
           content: [
             {
               type: 'text',
@@ -1392,6 +1578,9 @@ class BluematadorMCPServer {
 
           case 'get_active_events':
             return await this.handleGetActiveEvents(finalArgs);
+
+          case 'get_event_context':
+            return await this.handleGetEventContext(finalArgs);
 
           case 'get_active_events_summary':
             return await this.handleGetActiveEventsSummary(finalArgs);
@@ -1495,34 +1684,34 @@ class BluematadorMCPServer {
             return await this.handleMuteResourcesByWildcard(finalArgs);
 
           default:
-            throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+            throw new ProtocolError(ProtocolErrorCode.MethodNotFound, `Unknown tool: ${name}`);
         }
       } catch (error: any) {
-        if (error instanceof McpError) {
-          throw error;
+        if (error instanceof ProtocolError) {
+          if (error.code === ProtocolErrorCode.MethodNotFound) {
+            throw error;
+          }
+          return {
+            isError: true,
+            content: [{ type: 'text', text: error.message }]
+          };
         }
 
-        // Enhanced error handling with detailed information
         const errorDetails = this.formatDetailedError(error, name, args);
-
         const status = error.status || (error.response && error.response.status);
-        const message = error.message || 'An unknown error occurred';
 
-        if (status === 401) {
-          throw new McpError(ErrorCode.InvalidRequest, `Authentication failed: ${errorDetails}`);
-        } else if (status === 404) {
-          throw new McpError(ErrorCode.InvalidRequest, `Resource not found: ${errorDetails}`);
-        } else if (status === 400) {
-          throw new McpError(ErrorCode.InvalidParams, `Bad request: ${errorDetails}`);
-        } else if (status === 403) {
-          throw new McpError(ErrorCode.InvalidRequest, `Access forbidden: ${errorDetails}`);
-        } else if (status === 429) {
-          throw new McpError(ErrorCode.InternalError, `Rate limit exceeded: ${errorDetails}`);
-        } else if (status >= 500) {
-          throw new McpError(ErrorCode.InternalError, `Server error: ${errorDetails}`);
-        } else {
-          throw new McpError(ErrorCode.InternalError, `API error: ${errorDetails}`);
-        }
+        let label = error.config ? 'API error' : 'Tool error';
+        if (status === 401) label = 'Authentication failed';
+        else if (status === 403) label = 'Access forbidden';
+        else if (status === 404) label = 'Resource not found';
+        else if (status === 400) label = 'Bad request';
+        else if (status === 429) label = 'Rate limit exceeded';
+        else if (status >= 500) label = 'Server error';
+
+        return {
+          isError: true,
+          content: [{ type: 'text', text: `${label}: ${errorDetails}` }]
+        };
       }
     });
   }
@@ -1534,7 +1723,7 @@ class BluematadorMCPServer {
     return { apiClient: this.apiClient, accountId: this.accountId };
   }
 
-  private async handleCreateAWSIntegration(args: any) {
+  private async handleCreateAWSIntegration(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { name, roleArn, externalId } = args;
     const integrationData: AWSIntegrationData = { name, roleArn, externalId };
@@ -1551,7 +1740,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateAzureIntegration(args: any) {
+  private async handleCreateAzureIntegration(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { name, subscriptionId, tenantId, applicationId, secret } = args;
     const integrationData: AzureIntegrationData = { name, subscriptionId, tenantId, applicationId, secret };
@@ -1568,7 +1757,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleListIntegrations(args: any) {
+  private async handleListIntegrations(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     
     const integrations = await apiClient.listIntegrations(accountId);
@@ -1599,7 +1788,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateAWSIntegration(args: any) {
+  private async handleUpdateAWSIntegration(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { inboundId, name, roleArn, externalId } = args;
     const integrationData: AWSIntegrationData = { name, roleArn, externalId };
@@ -1616,7 +1805,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateAzureIntegration(args: any) {
+  private async handleUpdateAzureIntegration(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { inboundId, name, subscriptionId, tenantId, applicationId, secret } = args;
     const integrationData: AzureIntegrationData = { name, subscriptionId, tenantId, applicationId, secret };
@@ -1633,7 +1822,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleEnableIntegration(args: any) {
+  private async handleEnableIntegration(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { inboundId } = args;
     await apiClient.enableIntegration(accountId, inboundId);
@@ -1648,7 +1837,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleDisableIntegration(args: any) {
+  private async handleDisableIntegration(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { inboundId } = args;
     await apiClient.disableIntegration(accountId, inboundId);
@@ -1663,7 +1852,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleDeleteIntegration(args: any) {
+  private async handleDeleteIntegration(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { inboundId } = args;
     await apiClient.deleteIntegration(accountId, inboundId);
@@ -1679,7 +1868,7 @@ class BluematadorMCPServer {
   }
 
   // Events handlers
-  private async handleGetOpenedEvents(args: any) {
+  private async handleGetOpenedEvents(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { start, end, project } = args;
     const events = await apiClient.getOpenedEvents(accountId, start, end, project);
@@ -1716,7 +1905,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleGetActiveEvents(args: any) {
+  private async handleGetActiveEvents(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { project } = args;
     const events = await apiClient.getActiveEvents(accountId, project);
@@ -1753,7 +1942,70 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleGetActiveEventsSummary(args: any) {
+  private async handleGetEventContext(args: any): Promise<CallToolResult> {
+    const { apiClient, accountId } = this.getApiClient();
+    const eventId = args.event_id;
+    const days = Number(args.days ?? 7);
+    if (typeof eventId !== 'string' || eventId.trim() === '') {
+      return { isError: true, content: [{ type: 'text', text: 'event_id is required. Get one from get_active_events or get_opened_events.' }] };
+    }
+    if (!Number.isInteger(days) || days < 1 || days > 90) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: `days must be a whole number from 1 to 90, got ${JSON.stringify(args.days)}.` }]
+      };
+    }
+    const end = new Date();
+    const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
+
+    const [active, opened, mutes] = await Promise.allSettled([
+      apiClient.getActiveEvents(accountId),
+      apiClient.getOpenedEvents(accountId, start.toISOString(), end.toISOString()),
+      apiClient.listMuteRules(accountId),
+    ]);
+    if (active.status === 'rejected' && opened.status === 'rejected') {
+      throw active.reason;
+    }
+    const event = (active.status === 'fulfilled' ? active.value : []).find((candidate) => candidate.id === eventId)
+      ?? (opened.status === 'fulfilled' ? opened.value : []).find((candidate) => candidate.id === eventId);
+
+    if (!event) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: `No event with ID ${eventId} was active or opened in the last ${days} days. Check the ID, or pass a larger days value.`
+          }
+        ]
+      };
+    }
+
+    const arn = event.source?.ref?.arn;
+    const failure = (result: PromiseRejectedResult) => String(result.reason?.message ?? result.reason);
+    const related: Lookup<Event> = !arn
+      ? { kind: 'skipped', reason: 'the event has no resource ARN.' }
+      : opened.status === 'rejected'
+        ? { kind: 'failed', reason: failure(opened) }
+        : {
+            kind: 'found',
+            items: opened.value
+              .filter((other) => other.id !== event.id && other.source?.ref?.arn === arn)
+              .sort((a, b) => Date.parse(b.opened) - Date.parse(a.opened)),
+          };
+    const matchingMutes: Lookup<MuteRule> = !arn
+      ? { kind: 'skipped', reason: 'the event has no resource ARN.' }
+      : mutes.status === 'rejected'
+        ? { kind: 'failed', reason: failure(mutes) }
+        : { kind: 'found', items: mutes.value.filter((rule) => rule.resource?.arn === arn) };
+
+    return {
+      content: [{ type: 'text', text: formatEventContext(event, related, matchingMutes, days) }]
+    };
+  }
+
+
+  private async handleGetActiveEventsSummary(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { project } = args;
     const summary = await apiClient.getActiveEventsSummary(accountId, project);
@@ -1762,14 +2014,14 @@ class BluematadorMCPServer {
       content: [
         {
           type: 'text',
-          text: `Events summary for the last 30 days${project ? ` for project ${project}` : ''}:\n\n${JSON.stringify(summary, null, 2)}`
+          text: `Event counts for the last 30 days${project ? ` for project ${project}` : ''}, with the days that had events:\n\n${formatEventCounts(summary)}`
         }
       ]
     };
   }
 
   // Projects handlers
-  private async handleListProjects(args: any) {
+  private async handleListProjects(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     
     const projects = await apiClient.listProjects(accountId);
@@ -1798,7 +2050,7 @@ class BluematadorMCPServer {
   }
 
   // Users handlers
-  private async handleListUsers(args: any) {
+  private async handleListUsers(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     
     const result = await apiClient.listUsers(accountId);
@@ -1826,7 +2078,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleInviteUsers(args: any) {
+  private async handleInviteUsers(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { users } = args;
     await apiClient.inviteUsers(accountId, users as InviteUserData[]);
@@ -1844,7 +2096,7 @@ class BluematadorMCPServer {
   }
 
   // Notifications handlers
-  private async handleListNotifications(args: any) {
+  private async handleListNotifications(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     
     const notifications = await apiClient.listNotifications(accountId);
@@ -1874,7 +2126,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateEmailNotification(args: any) {
+  private async handleCreateEmailNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { email, severities } = args;
     const data: EmailNotificationData = {
@@ -1894,7 +2146,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreatePagerDutyNotification(args: any) {
+  private async handleCreatePagerDutyNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { name, account, serviceName, serviceSecret, severities } = args;
     const data: PagerDutyNotificationData = {
@@ -1917,7 +2169,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleEnableNotification(args: any) {
+  private async handleEnableNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId } = args;
     await apiClient.enableNotification(accountId, outboundId);
@@ -1932,7 +2184,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleDisableNotification(args: any) {
+  private async handleDisableNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId } = args;
     await apiClient.disableNotification(accountId, outboundId);
@@ -1947,7 +2199,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleDeleteNotification(args: any) {
+  private async handleDeleteNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId } = args;
     await apiClient.deleteNotification(accountId, outboundId);
@@ -1963,7 +2215,7 @@ class BluematadorMCPServer {
   }
 
   // Mute Rules handlers
-  private async handleListMuteRules(args: any) {
+  private async handleListMuteRules(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { includeInactive } = args;
     const muteRules = await apiClient.listMuteRules(accountId, includeInactive);
@@ -2002,7 +2254,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateMuteRule(args: any) {
+  private async handleCreateMuteRule(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { hide, resource, projects, regions, schedule } = args;
     const data: CreateMuteRuleData = {
@@ -2035,7 +2287,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleGetMuteRegions(args: any) {
+  private async handleGetMuteRegions(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     
     const regions = await apiClient.getMuteRegions(accountId);
@@ -2051,7 +2303,7 @@ class BluematadorMCPServer {
   }
 
   // Additional Notification handlers
-  private async handleCreateOpsGenieNotification(args: any) {
+  private async handleCreateOpsGenieNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { name, apikey, severities } = args;
     const data: OpsGenieNotificationData = {
@@ -2072,7 +2324,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateSNSNotification(args: any) {
+  private async handleCreateSNSNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { name, topicArn, accessKeyId, secretAccessKey, sendResolve, sendJson, severities } = args;
     const data: SNSNotificationData = {
@@ -2097,7 +2349,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateVictorOpsNotification(args: any) {
+  private async handleCreateVictorOpsNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { name, integrationId, routingKey, severities } = args;
     const data: VictorOpsNotificationData = {
@@ -2119,7 +2371,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateSquadCastNotification(args: any) {
+  private async handleCreateSquadCastNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { name, sourceInstance, severities } = args;
     const data: SquadCastNotificationData = {
@@ -2140,7 +2392,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleCreateServiceNowNotification(args: any) {
+  private async handleCreateServiceNowNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { name, instanceName, username, password, sourceInstance, severities } = args;
     const data: ServiceNowNotificationData = {
@@ -2167,7 +2419,7 @@ class BluematadorMCPServer {
   }
 
   // Update Notification handlers
-  private async handleUpdateEmailNotification(args: any) {
+  private async handleUpdateEmailNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId, email, severities } = args;
     const data: EmailNotificationData = {
@@ -2187,7 +2439,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdatePagerDutyNotification(args: any) {
+  private async handleUpdatePagerDutyNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, account, serviceName, serviceSecret, severities } = args;
     const data: PagerDutyNotificationData = {
@@ -2210,7 +2462,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateOpsGenieNotification(args: any) {
+  private async handleUpdateOpsGenieNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, apikey, severities } = args;
     const data: OpsGenieNotificationData = {
@@ -2231,7 +2483,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateSNSNotification(args: any) {
+  private async handleUpdateSNSNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, topicArn, accessKeyId, secretAccessKey, sendResolve, sendJson, severities } = args;
     const data: SNSNotificationData = {
@@ -2256,7 +2508,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateVictorOpsNotification(args: any) {
+  private async handleUpdateVictorOpsNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, integrationId, routingKey, severities } = args;
     const data: VictorOpsNotificationData = {
@@ -2278,7 +2530,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateSquadCastNotification(args: any) {
+  private async handleUpdateSquadCastNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, sourceInstance, severities } = args;
     const data: SquadCastNotificationData = {
@@ -2299,7 +2551,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleUpdateServiceNowNotification(args: any) {
+  private async handleUpdateServiceNowNotification(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { outboundId, name, instanceName, username, password, sourceInstance, severities } = args;
     const data: ServiceNowNotificationData = {
@@ -2326,9 +2578,11 @@ class BluematadorMCPServer {
   }
 
   // Metrics handler
-  private async handleGetMetrics(args: any) {
+  private async handleGetMetrics(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
-    const { metrics, agg, start, end, groups } = args;
+    const { agg, start, end, include_points } = args;
+    const metrics: string[] = [args.metrics].flat();
+    const groups: string[] = args.groups === undefined ? [] : [args.groups].flat();
     const query: MetricsQuery = {
       accountId: accountId,
       metrics,
@@ -2339,19 +2593,32 @@ class BluematadorMCPServer {
     };
 
     const result = await apiClient.getMetrics(query);
+    const summaries = new Map(result.map((graph) => [graph.metric, summarizeGraph(graph)]));
+    const withData = new Set([...summaries].filter(([, list]) => list.length > 0).map(([metric]) => metric));
+    const missing = metrics.filter((metric) => !withData.has(metric));
+    const sections = [
+      `Metrics from ${start} to ${end}${groups.length > 0 ? `, grouped by ${groups.join(', ')}` : ''}:`,
+      ...result.filter((graph) => withData.has(graph.metric)).map((graph) => formatMetricGraph(graph, summaries.get(graph.metric) ?? [], agg)),
+    ];
+    if (missing.length > 0) {
+      sections.push(`No data returned for: ${missing.join(', ')}. The metric name or a group label may be wrong, or the metric had no data in this range.`);
+    }
+    if (include_points) {
+      sections.push(`Raw points:\n${JSON.stringify(result, null, 2)}`);
+    }
 
     return {
       content: [
         {
           type: 'text',
-          text: `Metrics query results:\n\n**Query:** ${metrics} (${agg})\n**Time Range:** ${start} to ${end}\n**Groups:** ${groups || 'None'}\n\n**Results:**\n${JSON.stringify(result, null, 2)}`
+          text: sections.join('\n\n')
         }
       ]
     };
   }
 
   // Advanced Mute Rule handlers
-  private async handleGetMuteMonitors(args: any) {
+  private async handleGetMuteMonitors(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     
     const result = await apiClient.getMuteMonitors(accountId);
@@ -2370,7 +2637,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleGetMuteResources(args: any) {
+  private async handleGetMuteResources(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { page, pageSize } = args;
     const result = await apiClient.getMuteResources(accountId, page, pageSize);
@@ -2400,7 +2667,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleDeleteMuteRule(args: any) {
+  private async handleDeleteMuteRule(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { muteId } = args;
     await apiClient.deleteMuteRule(accountId, muteId);
@@ -2415,7 +2682,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleMuteMonitorsByService(args: any) {
+  private async handleMuteMonitorsByService(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { serviceName, monitorNames, hide = false, projects, regions, schedule } = args;
 
@@ -2430,8 +2697,8 @@ class BluematadorMCPServer {
 
     if (!serviceKey) {
       const availableServices = Object.keys(availableMonitors).join(', ');
-      throw new McpError(
-        ErrorCode.InvalidParams,
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidParams,
         `Service "${serviceName}" not found. Available services: ${availableServices}`
       );
     }
@@ -2447,8 +2714,8 @@ class BluematadorMCPServer {
         (monitor: string) => !availableMonitors[serviceKey].includes(monitor)
       );
       if (invalidMonitors.length > 0) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
           `Invalid monitors for service "${serviceKey}": ${invalidMonitors.join(', ')}. ` +
           `Available monitors: ${availableMonitors[serviceKey].join(', ')}`
         );
@@ -2495,7 +2762,7 @@ class BluematadorMCPServer {
     };
   }
 
-  private async handleMuteResourcesByWildcard(args: any) {
+  private async handleMuteResourcesByWildcard(args: any): Promise<CallToolResult> {
     const { apiClient, accountId } = this.getApiClient();
     const { resourcePattern, serviceType, hide = false, projects, regions, schedule } = args;
 
@@ -2504,8 +2771,8 @@ class BluematadorMCPServer {
     const allResources = resourcesResponse.resources;
 
     if (!allResources || allResources.length === 0) {
-      throw new McpError(
-        ErrorCode.InvalidRequest,
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidRequest,
         'No resources found in the account to apply wildcard pattern to.'
       );
     }
@@ -2540,8 +2807,8 @@ class BluematadorMCPServer {
 
     if (matchingResources.length === 0) {
       const serviceFilter = serviceType ? ` and service type "${serviceType}"` : '';
-      throw new McpError(
-        ErrorCode.InvalidRequest,
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidRequest,
         `No resources found matching pattern "${resourcePattern}"${serviceFilter}. ` +
         `Total resources available: ${allResources.length}`
       );
@@ -2604,13 +2871,18 @@ class BluematadorMCPServer {
   }
 
   async run(): Promise<void> {
-    const transport = new StdioServerTransport();
-    await this.server.connect(transport);
+    const handle = serveStdio(() => this.createServer(), {
+      onerror: (error) => console.error('[MCP Error]', error)
+    });
+    process.on('SIGINT', async () => {
+      await handle.close();
+      process.exit(0);
+    });
     console.error('Bluematador MCP server running on stdio');
   }
 
   async connect(transport: any): Promise<void> {
-    await this.server.connect(transport);
+    await this.createServer().connect(transport);
   }
 }
 
