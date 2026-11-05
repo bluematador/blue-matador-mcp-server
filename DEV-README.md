@@ -60,6 +60,7 @@ Configure Claude Desktop to use your local development version:
 - `npm run clean` - Remove the dist directory
 - `npm run rebuild` - Clean and rebuild
 - `npm run typecheck` - Run TypeScript type checking
+- `npm run docs` - Regenerate `docs/API-REFERENCE.md` from the tool list. `npm test` fails until you commit the result after changing a tool
 - `npm test` - Build, then run the unit tests
 
 ### Testing

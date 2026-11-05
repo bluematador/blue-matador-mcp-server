@@ -78,7 +78,7 @@ test('annotates every tool with hints that match its verb', async (t) => {
 test('docs/API-REFERENCE.md matches the tools the server lists', async (t) => {
   const client = await connectClient(t, new BluematadorMCPServer(API_KEY, ACCOUNT_ID, 'http://127.0.0.1:1'));
   const { tools } = await client.listTools();
-  const committed = readFileSync(new URL('../../docs/API-REFERENCE.md', import.meta.url), 'utf8');
+  const committed = readFileSync(new URL('../../docs/API-REFERENCE.md', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
   assert.equal(committed, renderToolReference(tools), 'run npm run docs and commit the result');
 });

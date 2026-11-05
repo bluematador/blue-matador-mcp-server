@@ -27,6 +27,7 @@
     "rebuild": "npm run clean && npm run build",
     "lint": "echo 'Linting not configured yet'",
     "typecheck": "tsc --noEmit",
+    "docs": "tsc && node scripts/generate-tool-reference.mjs",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
